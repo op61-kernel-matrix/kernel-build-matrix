@@ -814,7 +814,11 @@ runs:
 
           local download_url=""
           if [[ "$url" == *"github.com"* ]]; then
-              download_url="${url%.git}/archive/refs/heads/${branch}.tar.gz"
+              local github_path=$(echo "${url%.git}" | sed -E 's#^https?://github\.com/##')
+              # codeload accepts either an immutable commit or a named ref.  The
+              # previous refs/heads URL only worked for branches and failed for
+              # the pinned 40-character SuSFS revision used by the canary.
+              download_url="https://codeload.github.com/${github_path}/tar.gz/${branch}"
           elif [[ "$url" == *"gitlab.com"* ]]; then
               local project_path=$(echo "$url" | sed -E 's#^https?://gitlab\.com/##; s#\.git$##; s#/#%2F#g')
               download_url="https://gitlab.com/api/v4/projects/${project_path}/repository/archive.tar.gz?sha=${branch}"
@@ -910,7 +914,11 @@ runs:
 
         if [ "${{ env.OP_SUSFS }}" = true ]; then
           echo "Using SUSFS branch/commit: $SUSFS_BRANCH"
-          if ! retry_fetch_archive "https://gitlab.com/simonpunk/susfs4ksu.git" "$SUSFS_BRANCH"; then
+          # Ante0 mirrors the Simonpunk history and exposes the exact pinned
+          # gki-android14-6.1 commit on GitHub.  Keep the canonical GitLab
+          # project as a fallback without ever falling back to a moving ref.
+          if ! retry_fetch_archive "https://github.com/Ante0/susfs4ksu.git" "$SUSFS_BRANCH" && \
+             ! retry_fetch_archive "https://gitlab.com/simonpunk/susfs4ksu.git" "$SUSFS_BRANCH"; then
             echo "::error::Failed to fetch SUSFS archive after multiple attempts"
             exit 1
           fi
@@ -3429,7 +3437,7 @@ runs:
             echo "| **SUSFS Version** | ${SUSVER:-unknown} |"
 
             if [ "$SUSFS_SHA" != "unknown" ]; then
-              echo "| **SUSFS Commit** | [\`${SUSFS_SHA:0:8}\`](https://gitlab.com/simonpunk/susfs4ksu/-/commit/$SUSFS_SHA) |"
+              echo "| **SUSFS Commit** | [\`${SUSFS_SHA:0:8}\`](https://github.com/Ante0/susfs4ksu/commit/$SUSFS_SHA) |"
             else
               echo "| **SUSFS Commit** | unknown |"
             fi
