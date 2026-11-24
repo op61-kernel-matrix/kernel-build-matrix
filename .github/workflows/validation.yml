@@ -1,4 +1,4 @@
-name: Validation canary
+name: OP13R 6.1.157 canary validation
 
 on:
   workflow_dispatch:
@@ -6,12 +6,110 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: op13r-6.1.157-canary-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  controller:
-    name: Validation controller
+  validate:
+    name: OP13R 6.1.157 · nine-capability boot canary
     runs-on: ubuntu-24.04
+    timeout-minutes: 360
     steps:
-      - name: Explain branch policy
+      - name: Checkout matrix controller
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        shell: bash
         run: |
-          echo "Run this workflow from an approved validation branch."
-          echo "The default branch intentionally contains no device-specific build policy."
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git curl ca-certificates build-essential clang lld flex bison \
+            libelf-dev libssl-dev libncurses-dev zlib1g-dev liblz4-tool \
+            libxml2-utils rsync unzip dwarves file python3 ccache jq bc \
+            dos2unix kmod libdw-dev elfutils pigz zip patch aria2 cpio zstd
+
+      - name: Lock boot-proven device source and reviewed feature pins
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=configs/a16/OP13r.json
+          manifest=manifests/a16/oneplus_13r_6.1.157_w.xml
+          susfs_pin=f76b81f2a6bf98e4029cc0c823c054edbec29803
+          nomount_pin=ba8e1dba7bcb49cd7b78ee2aaa8f21fa14e89b07
+
+          jq -e '.model == "OP13r-6.1.157" and
+                 .manifest == "oneplus_13r_6.1.157_w.xml" and
+                 .android_version == "android14" and
+                 .kernel_version == "6.1" and
+                 .os_version == "A16"' "$config" >/dev/null
+          grep -qF 'revision="7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac"' "$manifest"
+          grep -qF 'revision="dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7"' "$manifest"
+
+          json=$(jq -c --arg pin "$susfs_pin" \
+            '.susfs=true | .susfs_version="2.4.0" |
+             .susfs_family="android14-6.1" | .susfs_commit=$pin |
+             .uname="OP-WILD"' "$config")
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+          echo "susfs_pin=$susfs_pin" >> "$GITHUB_OUTPUT"
+          echo "nomount_pin=$nomount_pin" >> "$GITHUB_OUTPUT"
+
+      - name: Build and enforce the canary gates
+        id: build
+        uses: ./.github/actions/build-gaming-kernel
+        with:
+          op_config_json: ${{ steps.config.outputs.json }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          ksu_type: KaliSU
+          susfs_commit_hash_or_branch: ${{ steps.config.outputs.susfs_pin }}
+          use_nomount: true
+          nomount_ref: ${{ steps.config.outputs.nomount_pin }}
+          optimize_level: O2
+          gaming_profile: false
+          clean: true
+          debug: false
+
+      - name: Enforce final canary identity and package
+        shell: bash
+        env:
+          ZIP_NAME: ${{ steps.build.outputs.zip_name }}
+          KERNEL_VERSION: ${{ steps.build.outputs.kernel_version }}
+          KSU_VERSION: ${{ steps.build.outputs.ksu_version }}
+          SUSFS_VERSION: ${{ steps.build.outputs.susfs_version }}
+        run: |
+          set -euo pipefail
+          [ "$KERNEL_VERSION" = "android14-6.1.157" ]
+          [ "$KSU_VERSION" = "30000-6" ]
+          [ "$SUSFS_VERSION" = "v2.4.0" ]
+          [ "$ZIP_NAME" = "KaliSU-AK3_OP13r_A16_android14-6.1.157_KaliSU_30000-6_NoMount_vSuSFS-2.4.0.zip" ]
+          zip_path=$(find . -type f -name "$ZIP_NAME" -print -quit)
+          test -n "$zip_path"
+          bash .github/scripts/audit-kalisu-op13r-ak3.sh "$zip_path"
+
+      - name: Write canary provenance summary
+        shell: bash
+        env:
+          IMAGE_SHA256: ${{ steps.build.outputs.image_sha256 }}
+          ZIP_SHA256: ${{ steps.build.outputs.zip_sha256 }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## OP13R 6.1.157 canary
+
+          - Device firmware: CPH2691 16.0.10.600(EX01)
+          - Common source: \`7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac\`
+          - Modules/devicetree source: \`dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7\`
+          - KaliSU source: \`4dab01f0fc022ec50c6c7f110c6be28d3dca292b\`
+          - SuSFS 2.4.0: \`f76b81f2a6bf98e4029cc0c823c054edbec29803\`
+          - NoMount dev inline engine: \`ba8e1dba7bcb49cd7b78ee2aaa8f21fa14e89b07\`
+          - Boot-proven Fatal reference ZIP SHA-256: \`81124e056a076f2262eec3c911355df0b3986b17be6d53511de85aa1fdb9e03e\`
+          - Stock boot SHA-256: \`a7bd7452ccf0f0c98057394c56406b74bf65d55c69bad8ec37b1e440c5568710\`
+          - Stock init_boot SHA-256: \`401ab6a8ac3a8702501c22a27c16675e8990bb6b0cbafe50ba842732054864f0\`
+          - Built Image SHA-256: \`$IMAGE_SHA256\`
+          - Canary ZIP SHA-256: \`$ZIP_SHA256\`
+
+          Static validation is not a boot claim. Publication remains disabled until physical-device boot verification.
+          EOF
