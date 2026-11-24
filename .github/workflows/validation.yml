@@ -1,0 +1,17 @@
+name: Validation canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controller:
+    name: Validation controller
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Explain branch policy
+        run: |
+          echo "Run this workflow from an approved validation branch."
+          echo "The default branch intentionally contains no device-specific build policy."
