@@ -85,6 +85,18 @@ def main() -> int:
         flags=re.M | re.S,
     )
 
+    # This declaration sits above the region replaced above on the pinned
+    # KaliSU tree.  Its only consumers were the removed runtime write_op hook.
+    text, removed_write_op = re.subn(
+        r'^static write_op_fn \*selinux_write_op;\n',
+        '',
+        text,
+        count=1,
+        flags=re.M,
+    )
+    if 'find_kernel_symbol_exact("write_op")' not in text and removed_write_op:
+        print('removed orphan selinux_write_op declaration')
+
     # The kernel-side SuSFS patch references these objects directly.  They must
     # have external linkage; the original KaliSU implementation kept them local.
     visibility = {
