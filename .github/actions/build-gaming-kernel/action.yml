@@ -3327,7 +3327,7 @@ runs:
         ZIP_MODEL="$OP_MODEL"
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           test "${SUSVER:-}" = "v2.4.0"
-          ZIP_NAME="KaliSU-AK3_OP13r_A16_android14-6.1.157_KaliSU_30000-6_NoMount_vSuSFS-2.4.0.zip"
+          ZIP_NAME="NOSTALGIC-AK3_OP13r_A16_android14-6.1.157_KaliSU_30000-6_NoMount_vSuSFS-2.4.0.zip"
         elif [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
           test -n "${SUSVER:-}"
           PROFILE_SUFFIX=''

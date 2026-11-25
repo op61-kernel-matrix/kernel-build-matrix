@@ -85,7 +85,7 @@ jobs:
           [ "$KERNEL_VERSION" = "android14-6.1.157" ]
           [ "$KSU_VERSION" = "30000-6" ]
           [ "$SUSFS_VERSION" = "v2.4.0" ]
-          [ "$ZIP_NAME" = "KaliSU-AK3_OP13r_A16_android14-6.1.157_KaliSU_30000-6_NoMount_vSuSFS-2.4.0.zip" ]
+          [ "$ZIP_NAME" = "NOSTALGIC-AK3_OP13r_A16_android14-6.1.157_KaliSU_30000-6_NoMount_vSuSFS-2.4.0.zip" ]
           zip_path=$(find . -type f -name "$ZIP_NAME" -print -quit)
           test -n "$zip_path"
           bash .github/scripts/audit-kalisu-op13r-ak3.sh "$zip_path"

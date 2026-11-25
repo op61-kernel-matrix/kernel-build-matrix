@@ -4,7 +4,7 @@ set -euo pipefail
 zip_path=${1:?usage: audit-kalisu-op13r-ak3.sh ZIP_PATH}
 zip_name=$(basename "$zip_path")
 [[ -s "$zip_path" ]] || { echo "::error::Missing KaliSU AK3 archive: $zip_path"; exit 1; }
-[[ "$zip_name" == KaliSU-AK3_OP13r_A16_android14-6.1.157_KaliSU_30000-6_NoMount_vSuSFS-2.4.0.zip ]] || {
+[[ "$zip_name" == NOSTALGIC-AK3_OP13r_A16_android14-6.1.157_KaliSU_30000-6_NoMount_vSuSFS-2.4.0.zip ]] || {
   echo "::error::Unexpected canary filename: $zip_name"
   exit 1
 }
