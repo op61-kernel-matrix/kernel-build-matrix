@@ -1229,7 +1229,32 @@ runs:
               cd "$KSU_FOLDER"
               patch -p1 --forward < "$GITHUB_ACTION_PATH/patches/bakasu-priority-uid-dispatch.patch"
             elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-              echo "KaliSU compatibility bridge already provides the native SuSFS dispatch for $susfs_version; no duplicate dispatch patch applied"
+              echo "Applying the proven WildKernels KSUN compatibility flow to the KaliSU bridge"
+              cd "$KSU_FOLDER"
+              patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
+              while IFS= read -r reject; do
+                rejected_file=$(basename "$reject" .rej)
+                fix_patch="$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/fix_${rejected_file}.patch"
+                if [ ! -f "$fix_patch" ]; then
+                  echo "::error::No reviewed KSUN compatibility patch for $reject"
+                  cat "$reject"
+                  exit 1
+                fi
+                echo "Applying reviewed KSUN fix: $(basename "$fix_patch")"
+                patch -p1 --forward < "$fix_patch"
+                rm -f "$reject"
+              done < <(find ./kernel -maxdepth 3 -name '*.rej' -print | sort)
+              patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/overwrite_hook_mode.patch"
+              patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/ksu_toolkit.patch"
+              if [ -n "$(find ./kernel -name '*.rej' -print -quit)" ]; then
+                echo "::error::Unhandled KSUN SuSFS integration reject remains"
+                find ./kernel -name '*.rej' -print -exec cat {} \;
+                exit 1
+              fi
+              grep -q '^config KSU_SUSFS$' kernel/Kconfig
+              grep -q '^config KSU_SUSFS_SUS_PATH$' kernel/Kconfig
+              grep -q 'susfs' kernel/Kbuild
+              grep -q 'CMD_SUSFS' kernel/supercall/dispatch.c
             else
               echo "NostalgiKSU already provides the native SuSFS dispatch for $susfs_version; no foreign dispatch patch applied"
             fi
@@ -1240,7 +1265,7 @@ runs:
             ;;
         esac
 
-        echo "✅ KaliSU native SuSFS ${OP_SUSFS_VERSION} dispatch integration verified"
+        echo "✅ KaliSU SuSFS ${OP_SUSFS_VERSION} dispatcher and nine-capability Kconfig integration verified"
         echo "::endgroup::"
 
     - name: Prepare SUSFS Kernel Compatibility
