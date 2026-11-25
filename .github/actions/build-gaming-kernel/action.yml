@@ -1235,6 +1235,17 @@ runs:
               while IFS= read -r reject; do
                 rejected_file=$(basename "$reject" .rej)
                 fix_patch="$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/fix_${rejected_file}.patch"
+                if [ "$reject" = "./kernel/feature/selinux_hide.c.rej" ]; then
+                  echo "Preserving KaliSU's newer SELinux-hide implementation and adding the SuSFS 2.4 lifecycle bridge"
+                  grep -q 'static int ksu_selinux_hide_enable' kernel/feature/selinux_hide.c
+                  grep -q 'static void ksu_selinux_hide_unhook' kernel/feature/selinux_hide.c
+                  grep -q 'static void initialize_fake_status' kernel/feature/selinux_hide.c
+                  patch -p1 --forward < "$GITHUB_ACTION_PATH/patches/kalisu-susfs24-selinux-hide.patch"
+                  grep -q '^void ksu_selinux_hide_handle_second_stage(void)' kernel/feature/selinux_hide.c
+                  grep -q '^void ksu_selinux_hide_handle_post_fs_data(void)' kernel/feature/selinux_hide.c
+                  rm -f "$reject"
+                  continue
+                fi
                 if [ ! -f "$fix_patch" ]; then
                   echo "::error::No reviewed KSUN compatibility patch for $reject"
                   cat "$reject"
