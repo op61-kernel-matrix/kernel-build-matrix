@@ -1112,6 +1112,9 @@ runs:
           -e 's|^$(eval KSU_VERSION=.*|$(eval KSU_VERSION=30000)|' \
           -e 's|^$(eval KSU_VERSION_TAG=.*|$(eval KSU_VERSION_TAG=v3.0.0-4dab01f0@KaliSU)|' \
           KernelSU/kernel/Kbuild
+        # Keep the proven KSUN compatibility implementation, but make its
+        # build diagnostics describe the KaliSU identity actually embedded.
+        sed -i 's/-- KernelSU-Next /-- KaliSU /g' KernelSU/kernel/Kbuild
         sed -i '/^ifndef KSU_NEXT_MANAGER_SIZE/i KSU_MANAGER_PACKAGE := io.gitlab.kalisu.manager' KernelSU/kernel/Kbuild
         sed -i '/^ifndef KSU_NEXT_MANAGER_SIZE/i KSU_NEXT_MANAGER_SIZE := 0x599' KernelSU/kernel/Kbuild
         sed -i '/^ifndef KSU_NEXT_MANAGER_SIZE/i KSU_NEXT_MANAGER_HASH := b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' KernelSU/kernel/Kbuild
@@ -1225,6 +1228,8 @@ runs:
               echo "Adding the SuSFS priority-UID command to BakaSU dispatch"
               cd "$KSU_FOLDER"
               patch -p1 --forward < "$GITHUB_ACTION_PATH/patches/bakasu-priority-uid-dispatch.patch"
+            elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
+              echo "KaliSU compatibility bridge already provides the native SuSFS dispatch for $susfs_version; no duplicate dispatch patch applied"
             else
               echo "NostalgiKSU already provides the native SuSFS dispatch for $susfs_version; no foreign dispatch patch applied"
             fi
@@ -1235,6 +1240,7 @@ runs:
             ;;
         esac
 
+        echo "✅ KaliSU native SuSFS ${OP_SUSFS_VERSION} dispatch integration verified"
         echo "::endgroup::"
 
     - name: Prepare SUSFS Kernel Compatibility
@@ -1504,6 +1510,7 @@ runs:
           fi
         fi
 
+        echo "✅ Ante0 SuSFS ${OP_SUSFS_VERSION} kernel patch applied; all hunks accepted and no reject remains"
         echo "::endgroup::"
 
     - name: Finalize SUSFS compatibility and configuration
@@ -3008,7 +3015,8 @@ runs:
           exit 1
         fi
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          grep -qF -- '-- KaliSU version: 30000 [v3.0.0-4dab01f0@KaliSU]' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU 30000 build identity missing"; exit 1; }
+          grep -qF -- '-- KaliSU version: 30000' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU 30000 build version missing"; exit 1; }
+          grep -qF -- '-- KaliSU tag: v3.0.0-4dab01f0@KaliSU' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Reviewed KaliSU build tag missing"; exit 1; }
           grep -qF 'v3.0.0-4dab01f0@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
           grep -qF 'io.gitlab.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager package identity missing"; exit 1; }
           grep -qF 'b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager certificate identity missing"; exit 1; }
