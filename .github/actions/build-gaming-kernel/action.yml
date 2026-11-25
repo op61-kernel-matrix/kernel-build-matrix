@@ -1709,10 +1709,17 @@ runs:
         CONFIG_KSU_SUSFS_SUS_MAP=y
         CONFIG_KSU_SUSFS_SUS_SU=n
         CONFIG_KSU_HOOK_TRACEPOINT=n
-        CONFIG_KSU_HOOK_SUSFS_INLINE=y
         CONFIG_SECCOMP=y
         CONFIG_SECCOMP_FILTER=y
         EOF
+
+        # The pinned KSUN compatibility bridge and Ante0 2.4.0 kernel patch
+        # guard their direct filesystem hooks with CONFIG_KSU_SUSFS.  They do
+        # not define the legacy KSU_HOOK_SUSFS_INLINE Kconfig symbol.
+        if [ "${{ inputs.ksu_type }}" != "KaliSU" ]; then
+          echo 'CONFIG_KSU_HOOK_SUSFS_INLINE=y' >> \
+            "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig"
+        fi
 
         echo "::endgroup::"
 
@@ -3101,7 +3108,11 @@ runs:
             exit 1
           fi
         done
-        for security_marker in CONFIG_KSU_HOOK_SUSFS_INLINE CONFIG_SECCOMP CONFIG_SECCOMP_FILTER; do
+        SECURITY_MARKERS=(CONFIG_KSU_SUSFS CONFIG_SECCOMP CONFIG_SECCOMP_FILTER)
+        if [ "${{ inputs.ksu_type }}" != "KaliSU" ]; then
+          SECURITY_MARKERS+=(CONFIG_KSU_HOOK_SUSFS_INLINE)
+        fi
+        for security_marker in "${SECURITY_MARKERS[@]}"; do
           if ! grep -qx "${security_marker}=y" "$FINAL_CONFIG"; then
             echo "::error::Final kernel config is missing ${security_marker}=y"
             rm -f "$IMAGE_STRINGS"
