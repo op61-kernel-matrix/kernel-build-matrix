@@ -28,7 +28,7 @@ grep -Fq 'ui_print "[KaliSU SPOOFED]"' "$installer"
 grep -Fq 'Core stack: KaliSU 3.0.0 (30000-6) + SuSFS 2.4.0 GKI-2' "$installer"
 grep -Fq 'NoMount: development inline VFS engine' "$installer"
 
-if grep -RaiEq 'nostalg|wild[[:space:]_-]*kernels?|fatal|bakasu|finasu|sukisu|resuki|nova' \
+if grep -RaiEq 'nostalg|wild[[:space:]_-]*kernels?|fatal|bakasu|finasu|sukisu|resuki|nova|ksun|kernelsu[[:space:]_-]*next|bouteillepleine' \
   "$installer" "$audit_dir/banner"; then
   echo "::error::Foreign public branding survived in KaliSU installer files"
   exit 1

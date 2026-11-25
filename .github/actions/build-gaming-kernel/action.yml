@@ -1075,12 +1075,12 @@ runs:
         echo "NostalgiKSU source: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
-    - name: Add KSUN bridge-compatible KaliSU 3.0.0 canary snapshot
+    - name: Add KaliSU 3.0.0 canary snapshot
       shell: bash
       if: ${{ inputs.ksu_type == 'KaliSU' }}
       run: |
         set -euo pipefail
-        echo "::group::Add KSUN bridge-compatible KaliSU 3.0.0 canary snapshot"
+        echo "::group::Add KaliSU 3.0.0 canary snapshot"
         cd "$KERNEL_PLATFORM_FOLDER"
         rm -rf KernelSU
 
@@ -1141,7 +1141,7 @@ runs:
         echo "KaliSU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
         echo "30000-6" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
         echo "KaliSU Run 41 identity source: 4dab01f0fc022ec50c6c7f110c6be28d3dca292b"
-        echo "KSUN bridge compatibility source: $KSU_COMMIT_SHA"
+        echo "KaliSU kernel compatibility source: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
     - name: Integrate latest NoMount inline VFS engine
@@ -1229,36 +1229,35 @@ runs:
               cd "$KSU_FOLDER"
               patch -p1 --forward < "$GITHUB_ACTION_PATH/patches/bakasu-priority-uid-dispatch.patch"
             elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-              echo "Applying the proven WildKernels KSUN compatibility flow to the KaliSU bridge"
+              echo "Applying the reviewed SuSFS 2.4 compatibility flow to KaliSU"
               cd "$KSU_FOLDER"
               patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
               while IFS= read -r reject; do
                 rejected_file=$(basename "$reject" .rej)
                 fix_patch="$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/fix_${rejected_file}.patch"
                 if [ "$reject" = "./kernel/feature/selinux_hide.c.rej" ]; then
-                  echo "Preserving KaliSU's newer SELinux-hide implementation and adding the SuSFS 2.4 lifecycle bridge"
+                  echo "Deferring KaliSU SELinux-hide reconciliation to the reviewed structural adapter"
                   grep -q 'static int ksu_selinux_hide_enable' kernel/feature/selinux_hide.c
                   grep -q 'static void ksu_selinux_hide_unhook' kernel/feature/selinux_hide.c
                   grep -q 'static void initialize_fake_status' kernel/feature/selinux_hide.c
-                  patch -p1 --forward < "$GITHUB_ACTION_PATH/patches/kalisu-susfs24-selinux-hide.patch"
-                  grep -q '^void ksu_selinux_hide_handle_second_stage(void)' kernel/feature/selinux_hide.c
-                  grep -q '^void ksu_selinux_hide_handle_post_fs_data(void)' kernel/feature/selinux_hide.c
                   rm -f "$reject"
                   continue
                 fi
                 if [ ! -f "$fix_patch" ]; then
-                  echo "::error::No reviewed KSUN compatibility patch for $reject"
+                  echo "::error::No reviewed KaliSU compatibility patch for $reject"
                   cat "$reject"
                   exit 1
                 fi
-                echo "Applying reviewed KSUN fix: $(basename "$fix_patch")"
+                echo "Applying reviewed KaliSU fix: $(basename "$fix_patch")"
                 patch -p1 --forward < "$fix_patch"
                 rm -f "$reject"
               done < <(find ./kernel -maxdepth 3 -name '*.rej' -print | sort)
               patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/overwrite_hook_mode.patch"
               patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/ksu_toolkit.patch"
+              python3 -I "$GITHUB_WORKSPACE/.github/scripts/kalisu-susfs-selinux-hide.py" \
+                kernel/feature/selinux_hide.c
               if [ -n "$(find ./kernel -name '*.rej' -print -quit)" ]; then
-                echo "::error::Unhandled KSUN SuSFS integration reject remains"
+                echo "::error::Unhandled KaliSU SuSFS integration reject remains"
                 find ./kernel -name '*.rej' -print -exec cat {} \;
                 exit 1
               fi
