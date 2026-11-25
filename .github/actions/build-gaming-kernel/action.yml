@@ -1075,20 +1075,26 @@ runs:
         echo "NostalgiKSU source: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
-    - name: Add reviewed KaliSU 3.0.0 kernel snapshot
+    - name: Add KSUN bridge-compatible KaliSU 3.0.0 canary snapshot
       shell: bash
       if: ${{ inputs.ksu_type == 'KaliSU' }}
       run: |
         set -euo pipefail
-        echo "::group::Add reviewed KaliSU 3.0.0 kernel snapshot"
+        echo "::group::Add KSUN bridge-compatible KaliSU 3.0.0 canary snapshot"
         cd "$KERNEL_PLATFORM_FOLDER"
         rm -rf KernelSU
-        mkdir -p KernelSU
-        cp -a "$GITHUB_WORKSPACE/kalisu/." KernelSU/kernel/
-        rm -rf KernelSU/kernel/uapi
-        cp -a "$GITHUB_WORKSPACE/kalisu/uapi" KernelSU/uapi
-        rm -f KernelSU/kernel/include/uapi
-        ln -s ../../uapi KernelSU/kernel/include/uapi
+
+        # The boot-proven 6.1.157 reference uses this exact KSUN revision and
+        # its native Ante0 SuSFS bridge.  Keep that bridge for the canary, but
+        # replace its manager trust identity and public version with the
+        # immutable Run 41 KaliSU values below.  This is an explicit
+        # compatibility canary, not a claim that KSUN source is KaliSU source.
+        KSUN_BRIDGE_COMMIT=59c3efbd37580a124f8280f5761a8c317fc331e7
+        git init -q KernelSU
+        git -C KernelSU remote add origin https://github.com/KernelSU-Next/KernelSU-Next.git
+        git -C KernelSU fetch --depth=1 origin "$KSUN_BRIDGE_COMMIT"
+        git -C KernelSU checkout --quiet --detach FETCH_HEAD
+        test "$(git -C KernelSU rev-parse HEAD)" = "$KSUN_BRIDGE_COMMIT"
 
         jq -e '.product == "KaliSU" and
                .version == "3.0.0" and
@@ -1096,16 +1102,17 @@ runs:
                .source_commit == "4dab01f0fc022ec50c6c7f110c6be28d3dca292b"' \
           "$GITHUB_WORKSPACE/kalisu/source.json" >/dev/null
         test -f KernelSU/kernel/supercall/dispatch.c
-        test -f KernelSU/kernel/extension/susfs_extension.c
-        test -L KernelSU/kernel/include/uapi
-        if grep -RqiE 'built.?in[[:space:]_-]*(zygisk|susfs|nomount)|nova' \
-          KernelSU/kernel --exclude-dir=.git; then
-          echo "::error::Forbidden upstream built-in subsystem or branding found in KaliSU kernel snapshot"
-          exit 1
-        fi
+        test -f KernelSU/kernel/manager/manager_identity.h
+
+        # Bind the kernel to the exact Run 41 manager package and certificate.
+        cp "$GITHUB_WORKSPACE/kalisu/manager/manager_identity.h" \
+          KernelSU/kernel/manager/manager_identity.h
+        grep -qF 'io.gitlab.kalisu.manager' KernelSU/kernel/manager/manager_identity.h
+        grep -qF 'b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' \
+          KernelSU/kernel/manager/manager_identity.h
 
         sed -i 's|^KSU_VERSION_FULL :=.*|KSU_VERSION_FULL := v3.0.0-4dab01f0@KaliSU|' KernelSU/kernel/Kbuild
-        KSU_COMMIT_SHA=4dab01f0fc022ec50c6c7f110c6be28d3dca292b
+        KSU_COMMIT_SHA=$KSUN_BRIDGE_COMMIT
 
         DRIVER_DIR="$COMMON_KERNEL_FOLDER/drivers"
         ln -sfn "$(realpath --relative-to="$DRIVER_DIR" "$KERNEL_PLATFORM_FOLDER/KernelSU/kernel")" "$DRIVER_DIR/kernelsu"
@@ -1123,7 +1130,8 @@ runs:
         echo "KSUVER=30000-6" >> "$GITHUB_ENV"
         echo "KaliSU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
         echo "30000-6" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
-        echo "KaliSU source: $KSU_COMMIT_SHA"
+        echo "KaliSU Run 41 identity source: 4dab01f0fc022ec50c6c7f110c6be28d3dca292b"
+        echo "KSUN bridge compatibility source: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
     - name: Integrate latest NoMount inline VFS engine

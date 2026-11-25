@@ -130,7 +130,8 @@ jobs:
           - Device firmware: CPH2691 16.0.10.600(EX01)
           - Common source: \`7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac\`
           - Modules/devicetree source: \`dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7\`
-          - KaliSU source: \`4dab01f0fc022ec50c6c7f110c6be28d3dca292b\`
+          - KaliSU Run 41 identity source: \`4dab01f0fc022ec50c6c7f110c6be28d3dca292b\`
+          - KSUN bridge compatibility source: \`59c3efbd37580a124f8280f5761a8c317fc331e7\`
           - SuSFS 2.4.0: \`f76b81f2a6bf98e4029cc0c823c054edbec29803\`
           - NoMount dev inline engine: \`ba8e1dba7bcb49cd7b78ee2aaa8f21fa14e89b07\`
           - Boot-proven Fatal reference ZIP SHA-256: \`81124e056a076f2262eec3c911355df0b3986b17be6d53511de85aa1fdb9e03e\`
