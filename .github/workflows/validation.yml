@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: op13r-6.1.157-canary-${{ github.ref }}
@@ -89,6 +89,34 @@ jobs:
           zip_path=$(find . -type f -name "$ZIP_NAME" -print -quit)
           test -n "$zip_path"
           bash .github/scripts/audit-kalisu-op13r-ak3.sh "$zip_path"
+
+      - name: Publish direct canary ZIP without artifact wrapper
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZIP_NAME: ${{ steps.build.outputs.zip_name }}
+        run: |
+          set -euo pipefail
+          zip_path=$(find . -type f -name "$ZIP_NAME" -print -quit)
+          test -n "$zip_path"
+
+          notes=$(mktemp)
+          cat > "$notes" <<'EOF'
+          Static validation canary only — not yet boot verified.
+
+          The ZIP is attached directly, without the GitHub Actions artifact wrapper.
+          It passed the KaliSU identity/certificate, SuSFS nine-capability, NoMount,
+          WireGuard configuration, Image integrity, and AnyKernel3 package gates.
+          EOF
+
+          if gh release view validation-canary >/dev/null 2>&1; then
+            gh release edit validation-canary --prerelease \
+              --title "Validation canary (not boot verified)" --notes-file "$notes"
+          else
+            gh release create validation-canary --prerelease --target "$GITHUB_SHA" \
+              --title "Validation canary (not boot verified)" --notes-file "$notes"
+          fi
+          gh release upload validation-canary "$zip_path#$ZIP_NAME" --clobber
 
       - name: Write canary provenance summary
         shell: bash

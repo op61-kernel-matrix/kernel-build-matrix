@@ -2172,6 +2172,12 @@ runs:
         cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
         CONFIG_NTSYNC=y
         EOF
+
+        # Ship WireGuard in the Image rather than relying on a vendor module.
+        # Kconfig selects its required crypto and UDP tunnel dependencies.
+        cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<'EOF'
+        CONFIG_WIREGUARD=y
+        EOF
         echo "✅ NTSync patch applied"
         echo "::endgroup::"
 
@@ -2636,6 +2642,11 @@ runs:
 
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" gki_defconfig
 
+        grep -q '^CONFIG_WIREGUARD=y$' "$OUT/.config" || {
+          echo "::error::WireGuard was requested but is absent from the resolved kernel config"
+          exit 1
+        }
+
         LOCAL_LOCALVERSION="${CUSTOM_LOCALVERSION:--NOSTALGIC-GAMING}"
         if [ -n "${LOCAL_LOCALVERSION:-}" ]; then
           scripts/config --file "$OUT/.config" --set-str LOCALVERSION "${LOCAL_LOCALVERSION}"
@@ -2931,6 +2942,8 @@ runs:
         BUILD_TIME="${BUILD_TIME:-0}"
 
         KERNEL_UNAME=$(strings "$IMG" | grep -E 'Linux version.*#' | tail -n1)
+        IMAGE_STRINGS=$(mktemp)
+        strings "$IMG" > "$IMAGE_STRINGS"
         echo "Kernel Uname: $KERNEL_UNAME"
         echo "KERNEL_UNAME=$KERNEL_UNAME" >> "$GITHUB_ENV"
         if [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
@@ -2966,8 +2979,9 @@ runs:
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           grep -qF -- '-- KaliSU version: 30000 [v3.0.0-4dab01f0@KaliSU]' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU 30000 build identity missing"; exit 1; }
           grep -qF 'v3.0.0-4dab01f0@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
+          grep -qF 'io.gitlab.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager package identity missing"; exit 1; }
           grep -qF 'b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager certificate identity missing"; exit 1; }
-          if grep -qiE 'NostalgiKSU|OP-BAKASU|huangdihd|ReSukiSU|Nova' "$IMAGE_STRINGS"; then
+          if grep -qiE 'NostalgiKSU|FinaSU|OP-BAKASU|huangdihd|ReSukiSU|SukiSU|Nova' "$IMAGE_STRINGS"; then
             echo "::error::Foreign visible kernel branding found in KaliSU Image"
             exit 1
           fi
@@ -2985,8 +2999,6 @@ runs:
           CONFIG_KSU_SUSFS_OPEN_REDIRECT
           CONFIG_KSU_SUSFS_SUS_MAP
         )
-        IMAGE_STRINGS=$(mktemp)
-        strings "$IMG" > "$IMAGE_STRINGS"
         for capability in "${REQUIRED_SUSFS_STRINGS[@]}"; do
           if ! grep -qF "$capability" "$IMAGE_STRINGS"; then
             echo "::error::Missing required SuSFS capability marker: $capability"
