@@ -1,5 +1,11 @@
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
+@@ -1,4 +1,5 @@
+ #include "selinux_hide.h"
++#include "infra/symbol_resolver.h"
+ #include "selinux/sepolicy.h"
+ #include "ss/policydb.h"
+ #include <linux/cred.h>
 @@ -351,6 +351,22 @@ out:
      mutex_unlock(&selinux_state.status_lock);
  }
