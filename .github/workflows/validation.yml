@@ -70,7 +70,7 @@ jobs:
           nomount_ref: ${{ steps.config.outputs.nomount_pin }}
           optimize_level: O2
           gaming_profile: false
-          clean: true
+          clean: false
           debug: false
 
       - name: Enforce final canary identity and package
