@@ -143,6 +143,7 @@ runs:
         bindgen="$OP_BINDGEN"
         ds="$OP_DS"
         ntsync="$OP_NTSYNC"
+        wireguard="$OP_WIREGUARD"
         optimize='${{ inputs.optimize_level }}'
 
         errors=()
@@ -2173,13 +2174,18 @@ runs:
         CONFIG_NTSYNC=y
         EOF
 
-        # Ship WireGuard in the Image rather than relying on a vendor module.
-        # Kconfig selects its required crypto and UDP tunnel dependencies.
+        echo "✅ NTSync patch applied"
+        echo "::endgroup::"
+
+    - name: Enable built-in WireGuard
+      shell: bash
+      if: ${{ env.OP_WIREGUARD == 'true' }}
+      run: |
+        set -euo pipefail
         cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<'EOF'
         CONFIG_WIREGUARD=y
         EOF
-        echo "✅ NTSync patch applied"
-        echo "::endgroup::"
+        echo "WireGuard requested as built-in: CONFIG_WIREGUARD=y"
 
     - name: Apply Unicode Fix Patch
       shell: bash
@@ -2642,10 +2648,12 @@ runs:
 
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" gki_defconfig
 
-        grep -q '^CONFIG_WIREGUARD=y$' "$OUT/.config" || {
-          echo "::error::WireGuard was requested but is absent from the resolved kernel config"
-          exit 1
-        }
+        if [ "${OP_WIREGUARD:-false}" = "true" ]; then
+          grep -q '^CONFIG_WIREGUARD=y$' "$OUT/.config" || {
+            echo "::error::WireGuard was requested but is absent from the resolved kernel config"
+            exit 1
+          }
+        fi
 
         LOCAL_LOCALVERSION="${CUSTOM_LOCALVERSION:--NOSTALGIC-GAMING}"
         if [ -n "${LOCAL_LOCALVERSION:-}" ]; then
@@ -3401,6 +3409,7 @@ runs:
           echo "IP_SET & IPv6 NAT: ${{ env.OP_IP_SET }}"
           echo "Unicode Fix: ${{ env.OP_UNICODE }}"
           echo "NTSync: ${{ env.OP_NTSYNC }}"
+          echo "WireGuard: ${{ env.OP_WIREGUARD }}"
           echo "Droidspaces: ${{ env.OP_DS }}"
           echo ""
           echo "Image SHA256: ${{ steps.collect_stats.outputs.image_sha256 }}"
@@ -3467,6 +3476,7 @@ runs:
           echo "| **IP_SET & IPv6 NAT** | ${{ env.OP_IP_SET }} |"
           echo "| **Unicode Fix** | ${{ env.OP_UNICODE }} |"
           echo "| **NTSync** | ${{ env.OP_NTSYNC }} |"
+          echo "| **WireGuard** | ${{ env.OP_WIREGUARD }} (built-in) |"
           echo "| **Droidspaces** | ${{ env.OP_DS }} |"
 
           echo ""
