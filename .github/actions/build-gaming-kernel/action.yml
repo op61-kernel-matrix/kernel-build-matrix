@@ -3017,9 +3017,10 @@ runs:
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           grep -qF -- '-- KaliSU version: 30000' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU 30000 build version missing"; exit 1; }
           grep -qF -- '-- KaliSU tag: v3.0.0-4dab01f0@KaliSU' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Reviewed KaliSU build tag missing"; exit 1; }
+          grep -qF -- '-- KaliSU Manager signature size: 0x599' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU Manager certificate size missing from compiled Kbuild contract"; exit 1; }
+          grep -qF -- '-- KaliSU Manager signature hash: b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU Manager certificate hash missing from compiled Kbuild contract"; exit 1; }
           grep -qF 'v3.0.0-4dab01f0@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
           grep -qF 'io.gitlab.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager package identity missing"; exit 1; }
-          grep -qF 'b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager certificate identity missing"; exit 1; }
           # Whole-Image inspection is reserved for competing functional root
           # or built-in Zygisk identities. Contributor names and generic words
           # can legitimately survive in imported source metadata, so their
