@@ -3009,8 +3009,22 @@ runs:
           fi
         fi
 
-        # Reject the artifact unless all nine required SuSFS capabilities remain.
-        REQUIRED_SUSFS_STRINGS=(
+        # Compiler optimization does not guarantee that Kconfig option names
+        # survive as literal strings in Image. Audit the effective final build
+        # config instead; it is the authoritative source for enabled features.
+        FINAL_CONFIG="$COMMON_KERNEL_FOLDER/out/.config"
+        if [ ! -s "$FINAL_CONFIG" ]; then
+          FINAL_CONFIG=$(find "$COMMON_KERNEL_FOLDER/out" -type f -name .config -print -quit)
+        fi
+        if [ -z "${FINAL_CONFIG:-}" ] || [ ! -s "$FINAL_CONFIG" ]; then
+          echo "::error::Final kernel .config was not found for the capability audit"
+          rm -f "$IMAGE_STRINGS"
+          exit 1
+        fi
+
+        # Reject the artifact unless all nine required SuSFS capabilities are
+        # enabled in the configuration that produced this exact Image.
+        REQUIRED_SUSFS_CONFIGS=(
           CONFIG_KSU_SUSFS_SUS_PATH
           CONFIG_KSU_SUSFS_SUS_MOUNT
           CONFIG_KSU_SUSFS_SUS_KSTAT
@@ -3021,25 +3035,13 @@ runs:
           CONFIG_KSU_SUSFS_OPEN_REDIRECT
           CONFIG_KSU_SUSFS_SUS_MAP
         )
-        for capability in "${REQUIRED_SUSFS_STRINGS[@]}"; do
-          if ! grep -qF "$capability" "$IMAGE_STRINGS"; then
-            echo "::error::Missing required SuSFS capability marker: $capability"
+        for capability in "${REQUIRED_SUSFS_CONFIGS[@]}"; do
+          if ! grep -qx "${capability}=y" "$FINAL_CONFIG"; then
+            echo "::error::Final kernel config is missing ${capability}=y"
             rm -f "$IMAGE_STRINGS"
             exit 1
           fi
         done
-        # Compiler optimization does not guarantee that Kconfig option names
-        # survive as literal strings in Image. Audit the effective build config
-        # instead: this is the authoritative source for the selected hook mode.
-        FINAL_CONFIG="$COMMON_KERNEL_FOLDER/out/.config"
-        if [ ! -s "$FINAL_CONFIG" ]; then
-          FINAL_CONFIG=$(find "$COMMON_KERNEL_FOLDER/out" -type f -name .config -print -quit)
-        fi
-        if [ -z "${FINAL_CONFIG:-}" ] || [ ! -s "$FINAL_CONFIG" ]; then
-          echo "::error::Final kernel .config was not found for the security audit"
-          rm -f "$IMAGE_STRINGS"
-          exit 1
-        fi
         for security_marker in CONFIG_KSU_HOOK_SUSFS_INLINE CONFIG_SECCOMP CONFIG_SECCOMP_FILTER; do
           if ! grep -qx "${security_marker}=y" "$FINAL_CONFIG"; then
             echo "::error::Final kernel config is missing ${security_marker}=y"
