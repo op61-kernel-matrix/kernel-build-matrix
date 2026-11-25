@@ -1104,14 +1104,22 @@ runs:
         test -f KernelSU/kernel/supercall/dispatch.c
         test -f KernelSU/kernel/manager/manager_identity.h
 
-        # Bind the kernel to the exact Run 41 manager package and certificate.
-        cp "$GITHUB_WORKSPACE/kalisu/manager/manager_identity.h" \
-          KernelSU/kernel/manager/manager_identity.h
-        grep -qF 'io.gitlab.kalisu.manager' KernelSU/kernel/manager/manager_identity.h
-        grep -qF 'b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' \
-          KernelSU/kernel/manager/manager_identity.h
-
-        sed -i 's|^KSU_VERSION_FULL :=.*|KSU_VERSION_FULL := v3.0.0-4dab01f0@KaliSU|' KernelSU/kernel/Kbuild
+        # KSUN reads its manager trust contract from Kbuild.  Bind the bridge
+        # to the exact package/certificate used by the signed Run 41 APKs.
+        # Do not replace manager_identity.h: it contains runtime UID helpers,
+        # not the package or signing certificate constants.
+        sed -i \
+          -e 's|^$(eval KSU_VERSION=.*|$(eval KSU_VERSION=30000)|' \
+          -e 's|^$(eval KSU_VERSION_TAG=.*|$(eval KSU_VERSION_TAG=v3.0.0-4dab01f0@KaliSU)|' \
+          KernelSU/kernel/Kbuild
+        sed -i '/^ifndef KSU_NEXT_MANAGER_SIZE/i\KSU_MANAGER_PACKAGE := io.gitlab.kalisu.manager\
+KSU_NEXT_MANAGER_SIZE := 0x599\
+KSU_NEXT_MANAGER_HASH := b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd\
+' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_MANAGER_PACKAGE := io.gitlab.kalisu.manager' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_NEXT_MANAGER_SIZE := 0x599' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_NEXT_MANAGER_HASH := b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' \
+          KernelSU/kernel/Kbuild
         KSU_COMMIT_SHA=$KSUN_BRIDGE_COMMIT
 
         DRIVER_DIR="$COMMON_KERNEL_FOLDER/drivers"
