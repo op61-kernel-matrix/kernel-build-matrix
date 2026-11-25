@@ -2997,8 +2997,14 @@ runs:
           grep -qF 'v3.0.0-4dab01f0@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
           grep -qF 'io.gitlab.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager package identity missing"; exit 1; }
           grep -qF 'b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager certificate identity missing"; exit 1; }
-          if grep -qiE 'NostalgiKSU|FinaSU|OP-WILD|WildKSU|wild[[:space:]_-]*kernels?|wildjames|weedman|fatalcoder|fatal[[:space:]_-]*coder|ReSukiSU|resukisu|huangdihd|hunagdihd|SukiSU|Nova' "$IMAGE_STRINGS"; then
-            echo "::error::Foreign visible kernel branding found in KaliSU Image"
+          # Whole-Image inspection is reserved for competing functional root
+          # or built-in Zygisk identities. Contributor names and generic words
+          # can legitimately survive in imported source metadata, so their
+          # public presentation is enforced by uname and AK3 audits instead.
+          IMAGE_IDENTITY_PATTERN='NostalgiKSU|FinaSU|OP-BAKASU|WildKSU|ReSukiSU|SukiSU-Nova|BuiltZygisk|NyaZygisk|NeoZygisk'
+          if grep -qiE "$IMAGE_IDENTITY_PATTERN" "$IMAGE_STRINGS"; then
+            echo "::error::Competing root or built-in Zygisk identity found in KaliSU Image"
+            grep -iEm 20 "$IMAGE_IDENTITY_PATTERN" "$IMAGE_STRINGS" >&2
             exit 1
           fi
         fi
