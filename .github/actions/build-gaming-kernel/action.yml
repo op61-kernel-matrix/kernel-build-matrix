@@ -2516,7 +2516,7 @@ runs:
         # retain their expected vermagic/KMI contract. NostalgiKSU identity is
         # reported through its own ABI, never by mutating kernel.release.
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          CUSTOM_LOCALVERSION="-${ANDROID_VER}-KaliSU"
+          CUSTOM_LOCALVERSION="-${ANDROID_VER}-OP-KALISU"
         elif [ "${{ inputs.gaming_profile }}" = "true" ]; then
           CUSTOM_LOCALVERSION="-${ANDROID_VER}-NOSTALGIC-GAMING"
         elif [[ "$OP_UNAME" =~ ^[0-9]+-g[0-9a-f]+(-ab[0-9]+)?$ ]]; then
@@ -2958,7 +2958,7 @@ runs:
         echo "KERNEL_UNAME=$KERNEL_UNAME" >> "$GITHUB_ENV"
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           grep -Fq "Linux version ${OP_KERNEL_VERSION}." <<<"$KERNEL_UNAME" &&
-            grep -Fq -- "-${OP_ANDROID_VERSION}-KaliSU" <<<"$KERNEL_UNAME" || {
+            grep -Fq -- "-${OP_ANDROID_VERSION}-OP-KALISU" <<<"$KERNEL_UNAME" || {
             echo "::error::Unexpected KaliSU kernel uname: $KERNEL_UNAME"
             exit 1
           }
