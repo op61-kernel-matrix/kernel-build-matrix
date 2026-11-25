@@ -2515,7 +2515,9 @@ runs:
         # Keep the exact stock-shaped release string so OnePlus vendor modules
         # retain their expected vermagic/KMI contract. NostalgiKSU identity is
         # reported through its own ABI, never by mutating kernel.release.
-        if [ "${{ inputs.gaming_profile }}" = "true" ]; then
+        if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
+          CUSTOM_LOCALVERSION="-${ANDROID_VER}-KaliSU"
+        elif [ "${{ inputs.gaming_profile }}" = "true" ]; then
           CUSTOM_LOCALVERSION="-${ANDROID_VER}-NOSTALGIC-GAMING"
         elif [[ "$OP_UNAME" =~ ^[0-9]+-g[0-9a-f]+(-ab[0-9]+)?$ ]]; then
           CUSTOM_LOCALVERSION="-${ANDROID_VER}-${OP_UNAME}"
@@ -2954,7 +2956,13 @@ runs:
         strings "$IMG" > "$IMAGE_STRINGS"
         echo "Kernel Uname: $KERNEL_UNAME"
         echo "KERNEL_UNAME=$KERNEL_UNAME" >> "$GITHUB_ENV"
-        if [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
+        if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
+          grep -Fq "Linux version ${OP_KERNEL_VERSION}." <<<"$KERNEL_UNAME" &&
+            grep -Fq -- "-${OP_ANDROID_VERSION}-KaliSU" <<<"$KERNEL_UNAME" || {
+            echo "::error::Unexpected KaliSU kernel uname: $KERNEL_UNAME"
+            exit 1
+          }
+        elif [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
           # Gaming builds have one explicit lab identity regardless of the
           # source config's stock or compatibility uname placeholder.
           if [ "${{ inputs.gaming_profile }}" = "true" ]; then
@@ -2979,17 +2987,17 @@ runs:
               exit 1
             }
           fi
-          if grep -qiE 'resusfs|bakasu|huangdihd|pilot' <<<"$KERNEL_UNAME"; then
-            echo "::error::Forbidden foreign branding found in uname: $KERNEL_UNAME"
-            exit 1
-          fi
+        fi
+        if grep -qiE 'OP-WILD|WildKSU|wild[[:space:]_-]*kernels?|wildjames|weedman|fatalcoder|fatal[[:space:]_-]*coder|resukisu|re[[:space:]_-]*sukisu|huangdihd|hunagdihd|resusfs|bakasu|pilot' <<<"$KERNEL_UNAME"; then
+          echo "::error::Forbidden foreign branding found in uname: $KERNEL_UNAME"
+          exit 1
         fi
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           grep -qF -- '-- KaliSU version: 30000 [v3.0.0-4dab01f0@KaliSU]' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU 30000 build identity missing"; exit 1; }
           grep -qF 'v3.0.0-4dab01f0@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
           grep -qF 'io.gitlab.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager package identity missing"; exit 1; }
           grep -qF 'b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager certificate identity missing"; exit 1; }
-          if grep -qiE 'NostalgiKSU|FinaSU|OP-BAKASU|huangdihd|ReSukiSU|SukiSU|Nova' "$IMAGE_STRINGS"; then
+          if grep -qiE 'NostalgiKSU|FinaSU|OP-WILD|WildKSU|wild[[:space:]_-]*kernels?|wildjames|weedman|fatalcoder|fatal[[:space:]_-]*coder|ReSukiSU|resukisu|huangdihd|hunagdihd|SukiSU|Nova' "$IMAGE_STRINGS"; then
             echo "::error::Foreign visible kernel branding found in KaliSU Image"
             exit 1
           fi
@@ -3291,8 +3299,8 @@ runs:
           echo "Bundled ReKernel module: $(basename "$selected_rekernel")"
         fi
 
-        # Fatal's proven source is intentionally retained, but none of its
-        # WildKernels/Fatal installer footer or presentation may survive in a
+        # The proven source is intentionally retained, but none of its
+        # upstream installer footer or presentation may survive in a
         # NOSTALGIC-AK3 deliverable.
         if [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
           grep -Fq 'ui_print "NostalgiKSU"' anykernel.sh
@@ -3306,7 +3314,8 @@ runs:
         elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           grep -Fq 'ui_print "[KaliSU SPOOFED]"' anykernel.sh
           grep -Fq 'ui_print "KaliSU"' anykernel.sh
-          if grep -qiE 'nostalg|huangdihd|wild[[:space:]_-]*kernels?|fatal|bakasu|finasu|sukisu|resuki|nova' anykernel.sh; then
+          grep -Fq 'ui_print "Credits: OnePlus/Oppo (OOS-COS), KaliSU contributors & AK3 Team"' anykernel.sh
+          if grep -qiE 'nostalg|OP-WILD|WildKSU|wild[[:space:]_-]*kernels?|wildjames|weedman|fatalcoder|fatal[[:space:]_-]*coder|huangdihd|hunagdihd|bakasu|finasu|sukisu|resukisu|re[[:space:]_-]*sukisu|nova' anykernel.sh; then
             echo "::error::Foreign installer branding survived the KaliSU footer rewrite"
             exit 1
           fi

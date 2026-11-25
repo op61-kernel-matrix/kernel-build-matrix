@@ -53,7 +53,7 @@ jobs:
           json=$(jq -c --arg pin "$susfs_pin" \
             '.susfs=true | .susfs_version="2.4.0" |
              .susfs_family="android14-6.1" | .susfs_commit=$pin |
-             .wireguard=true | .uname="OP-WILD"' "$config")
+             .wireguard=true | .uname="KaliSU"' "$config")
           echo "json=$json" >> "$GITHUB_OUTPUT"
           echo "susfs_pin=$susfs_pin" >> "$GITHUB_OUTPUT"
           echo "nomount_pin=$nomount_pin" >> "$GITHUB_OUTPUT"
