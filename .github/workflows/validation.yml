@@ -2,16 +2,197 @@ name: Validation canary
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - validation-canary
+    paths:
+      - .github/workflows/validation.yml
+      - .github/actions/build-kalisu-op13r/**
+      - .github/actions/kernel-source-sync/**
+      - kalisu/**
+      - manifests/a16/oneplus_13r_6.1.157_w.xml
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: validation-canary-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_ZIP: KaliSU-OP13R-A16-android14-6.1.157-native-boot-baseline.zip
+  RELEASE_TAG: kalisu-op13r-native-baseline-v1
+  KALISU_SOURCE_COMMIT: 4dab01f0fc022ec50c6c7f110c6be28d3dca292b
 
 jobs:
-  controller:
-    name: Validation controller
+  build:
+    name: Native baseline - unbooted device canary
     runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
     steps:
-      - name: Explain branch policy
+      - name: Checkout new controller
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Declare test scope
+        shell: bash
         run: |
-          echo "Run this workflow from an approved validation branch."
-          echo "The default branch intentionally contains no device-specific build policy."
+          set -euo pipefail
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Native KaliSU OP13R boot-baseline
+
+          This is a **new, unbooted candidate**. A green Actions run proves only
+          that the source compiled and the package passed static checks. It does
+          **not** prove that the OnePlus 13R boots it.
+
+          This first candidate intentionally excludes SuSFS and NoMount so that
+          the first device test isolates native KaliSU on android14-6.1.157.
+          EOF
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git curl ca-certificates build-essential clang lld flex bison \
+            libelf-dev libssl-dev libncurses-dev zlib1g-dev liblz4-tool \
+            libxml2-utils rsync unzip dwarves file python3 ccache jq bc \
+            dos2unix kmod libdw-dev elfutils pigz zip patch aria2 cpio zstd
+
+      - name: Verify pinned native KaliSU and OP13R sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e --arg commit "$KALISU_SOURCE_COMMIT" \
+            '.product == "KaliSU" and
+             .version == "3.0.0" and
+             .version_code == 30000 and
+             .source_repository == "nostasukisumanager/KaliSU" and
+             .source_commit == $commit' kalisu/source.json >/dev/null
+          grep -qF 'REPO_NAME   := KaliSU' kalisu/Kbuild
+          grep -qF 'VERSION_BASE    := 30000' kalisu/Kbuild
+          grep -qF 'KSU_PACKAGE_NAME ?= io.gitlab.kalisu.manager' kalisu/Kbuild
+          grep -qF 'revision="7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac"' \
+            manifests/a16/oneplus_13r_6.1.157_w.xml
+          grep -qF 'revision="dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7"' \
+            manifests/a16/oneplus_13r_6.1.157_w.xml
+
+      - name: Build minimal native KaliSU candidate
+        id: build
+        uses: ./.github/actions/build-kalisu-op13r
+        with:
+          op_config_json: >-
+            {"model":"OP13r-6.1.157","soc":"pineapple","branch":"wild/sm8650","manifest":"oneplus_13r_6.1.157_w.xml","android_version":"android14","kernel_version":"6.1","os_version":"A16","lto":"thin","zyc_compiler":"","c_compiler":"kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c/bin","rust_compiler":"","bindgen":"","rust_build":false,"disk_cleanup":false,"hmbird":false,"susfs":false,"opt":false,"ds":false,"bbg":false,"bbr":false,"bbr3":false,"ttl":false,"ip_set":false,"unicode":false,"ntsync":false,"wireguard":false,"blacklist_modules":"","uname":"OP-KALISU-BOOTBASELINE"}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          ksu_type: KaliSU
+          ksu_branch_or_hash: ${{ env.KALISU_SOURCE_COMMIT }}
+          use_nomount: false
+          optimize_level: O2
+          gaming_profile: false
+          clean: true
+          debug: false
+
+      - name: Static audit of native baseline
+        id: audit
+        shell: bash
+        env:
+          ZIP_NAME: ${{ steps.build.outputs.zip_name }}
+          KERNEL_VERSION: ${{ steps.build.outputs.kernel_version }}
+          KSU_VERSION: ${{ steps.build.outputs.ksu_version }}
+        run: |
+          set -euo pipefail
+          test "$KERNEL_VERSION" = "android14-6.1.157"
+          test "$KSU_VERSION" = "30000-native"
+          test "$ZIP_NAME" = "$EXPECTED_ZIP"
+
+          zip_path=$(find "$GITHUB_WORKSPACE" -type f -name "$EXPECTED_ZIP" -print -quit)
+          test -n "$zip_path"
+          unzip -t "$zip_path" >/dev/null
+          unzip -p "$zip_path" Image > /tmp/kalisu-op13r-Image
+          test -s /tmp/kalisu-op13r-Image
+          file /tmp/kalisu-op13r-Image | grep -qi 'Linux kernel ARM64 boot executable Image'
+          strings -a /tmp/kalisu-op13r-Image > /tmp/kalisu-op13r-strings
+
+          grep -Fq 'KaliSU' /tmp/kalisu-op13r-strings
+          grep -Fq 'io.gitlab.kalisu.manager' /tmp/kalisu-op13r-strings
+          if grep -Fq 'KernelSU-Next' /tmp/kalisu-op13r-strings; then
+            echo '::error::KernelSU-Next identity found in the native KaliSU baseline'
+            exit 1
+          fi
+          if grep -Eq 'CONFIG_KSU_SUSFS|SUSFS_VERSION|CONFIG_NOMOUNT' /tmp/kalisu-op13r-strings; then
+            echo '::error::SuSFS or NoMount unexpectedly entered the minimal baseline'
+            exit 1
+          fi
+
+          image_sha256=$(sha256sum /tmp/kalisu-op13r-Image | awk '{print $1}')
+          zip_sha256=$(sha256sum "$zip_path" | awk '{print $1}')
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+          echo "image_sha256=$image_sha256" >> "$GITHUB_OUTPUT"
+          echo "zip_sha256=$zip_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Publish unbooted prerelease candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ZIP_PATH: ${{ steps.audit.outputs.zip_path }}
+          IMAGE_SHA256: ${{ steps.audit.outputs.image_sha256 }}
+          ZIP_SHA256: ${{ steps.audit.outputs.zip_sha256 }}
+        run: |
+          set -euo pipefail
+          notes=$(mktemp)
+          cat > "$notes" <<EOF
+          Native KaliSU boot-baseline candidate for OnePlus 13R CPH2691,
+          OOS 16.0.10.600(EX01), android14-6.1.157.
+
+          IMPORTANT: UNBOOTED / DEVICE TEST REQUIRED.
+          A successful Actions run is only a compile and static-audit result.
+
+          - Root source: native KaliSU 3.0.0 / 30000
+          - KaliSU commit: $KALISU_SOURCE_COMMIT
+          - KernelSU-Next identity substitution: none
+          - SuSFS: excluded for first boot isolation
+          - NoMount: excluded for first boot isolation
+          - Image SHA-256: $IMAGE_SHA256
+          - ZIP SHA-256: $ZIP_SHA256
+
+          Keep the stock boot image ready and test by temporary boot first when
+          the device/bootloader supports it.
+          EOF
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --prerelease \
+              --title 'KaliSU OP13R native baseline v1 - UNBOOTED' \
+              --notes-file "$notes"
+          else
+            gh release create "$RELEASE_TAG" --prerelease --target "${{ github.sha }}" \
+              --title 'KaliSU OP13R native baseline v1 - UNBOOTED' \
+              --notes-file "$notes"
+          fi
+          gh release upload "$RELEASE_TAG" "$ZIP_PATH#$EXPECTED_ZIP" --clobber
+
+      - name: Record provenance and test status
+        shell: bash
+        env:
+          IMAGE_SHA256: ${{ steps.audit.outputs.image_sha256 }}
+          ZIP_SHA256: ${{ steps.audit.outputs.zip_sha256 }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+
+          ### Result
+
+          - Build/static audit: passed
+          - Boot status: **UNTESTED**
+          - Device: OnePlus 13R CPH2691
+          - Firmware target: OOS 16.0.10.600(EX01)
+          - Kernel/KMI: android14-6.1 / 6.1.157
+          - Native KaliSU: `$KALISU_SOURCE_COMMIT`
+          - OnePlus common source: `7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac`
+          - Modules/devicetree source: `dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7`
+          - Stock boot SHA-256: `a7bd7452ccf0f0c98057394c56406b74bf65d55c69bad8ec37b1e440c5568710`
+          - Stock init_boot SHA-256: `401ab6a8ac3a8702501c22a27c16675e8990bb6b0cbafe50ba842732054864f0`
+          - Built Image SHA-256: `$IMAGE_SHA256`
+          - Flashable ZIP SHA-256: `$ZIP_SHA256`
+          EOF

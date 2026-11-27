@@ -1094,10 +1094,18 @@ runs:
         # KernelSU-Next tree and changed its visible identity; this baseline
         # deliberately does not do that.
         cp -a "$GITHUB_WORKSPACE/action-source/kalisu" KernelSU
+        # GitHub's source archive represented include/uapi as a plain file
+        # containing the original symlink target.  Recreate the link for this
+        # relocated tree so both the kernel objects and the nolibc preinit
+        # runner resolve uapi/supercall.h from KernelSU/uapi.
+        rm -f KernelSU/include/uapi
+        ln -s ../uapi KernelSU/include/uapi
         test -f KernelSU/Kbuild
         test -f KernelSU/Kconfig
         test -f KernelSU/supercall/dispatch.c
         test -f KernelSU/manager/manager_identity.h
+        test -L KernelSU/include/uapi
+        test -f KernelSU/include/uapi/supercall.h
         grep -qF 'REPO_NAME   := KaliSU' KernelSU/Kbuild
         grep -qF 'VERSION_BASE    := 30000' KernelSU/Kbuild
         grep -qF 'KSU_PACKAGE_NAME ?= io.gitlab.kalisu.manager' KernelSU/Kbuild
