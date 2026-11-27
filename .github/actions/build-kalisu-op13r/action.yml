@@ -1095,31 +1095,34 @@ runs:
 
         # Use the real KaliSU tree and its owned manager/kernel Bridge.  Never
         # substitute a foreign root engine or accept a foreign manager cert.
-        cp -a "$GITHUB_WORKSPACE/action-source/kalisu" KernelSU
+        mkdir -p KernelSU
+        cp -a "$GITHUB_WORKSPACE/action-source/kalisu" KernelSU/kernel
         # GitHub's source archive represented include/uapi as a plain file
         # containing the original symlink target.  Recreate the link for this
         # relocated tree so both the kernel objects and the nolibc preinit
-        # runner resolve uapi/supercall.h from KernelSU/uapi.
-        rm -f KernelSU/include/uapi
-        ln -s ../uapi KernelSU/include/uapi
-        test -f KernelSU/Kbuild
-        test -f KernelSU/Kconfig
-        test -f KernelSU/supercall/dispatch.c
-        test -f KernelSU/manager/manager_identity.h
-        test -f KernelSU/bridge/kalisu_bridge.c
-        test -L KernelSU/include/uapi
-        test -f KernelSU/include/uapi/supercall.h
-        grep -qF 'REPO_NAME   := KaliSU' KernelSU/Kbuild
-        grep -qF 'VERSION_BASE    := 30000' KernelSU/Kbuild
-        grep -qF 'KSU_PACKAGE_NAME ?= com.nostalgicmultiverse.kalisu.manager' KernelSU/Kbuild
-        grep -qF 'KSU_EXPECTED_SIZE ?= 0x53b' KernelSU/Kbuild
-        grep -qF 'KSU_EXPECTED_HASH ?= d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' KernelSU/Kbuild
-        grep -qF 'kalisu-objs += bridge/kalisu_bridge.o' KernelSU/Kbuild
-        grep -qF 'KALISU_IOCTL_BRIDGE' KernelSU/supercall/dispatch.c
+        # runner resolve uapi/supercall.h from KernelSU/kernel/uapi.  Keep the
+        # conventional outer KernelSU/kernel layout because the reviewed
+        # SuSFS compatibility patches are rooted at kernel/.
+        rm -f KernelSU/kernel/include/uapi
+        ln -s ../uapi KernelSU/kernel/include/uapi
+        test -f KernelSU/kernel/Kbuild
+        test -f KernelSU/kernel/Kconfig
+        test -f KernelSU/kernel/supercall/dispatch.c
+        test -f KernelSU/kernel/manager/manager_identity.h
+        test -f KernelSU/kernel/bridge/kalisu_bridge.c
+        test -L KernelSU/kernel/include/uapi
+        test -f KernelSU/kernel/include/uapi/supercall.h
+        grep -qF 'REPO_NAME   := KaliSU' KernelSU/kernel/Kbuild
+        grep -qF 'VERSION_BASE    := 30000' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_PACKAGE_NAME ?= com.nostalgicmultiverse.kalisu.manager' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_EXPECTED_SIZE ?= 0x53b' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_EXPECTED_HASH ?= d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' KernelSU/kernel/Kbuild
+        grep -qF 'kalisu-objs += bridge/kalisu_bridge.o' KernelSU/kernel/Kbuild
+        grep -qF 'KALISU_IOCTL_BRIDGE' KernelSU/kernel/supercall/dispatch.c
         KSU_COMMIT_SHA=d1a0836256189898bd4738263e8c64a60e497788
 
         DRIVER_DIR="$COMMON_KERNEL_FOLDER/drivers"
-        ln -sfn "$(realpath --relative-to="$DRIVER_DIR" "$KERNEL_PLATFORM_FOLDER/KernelSU")" "$DRIVER_DIR/kernelsu"
+        ln -sfn "$(realpath --relative-to="$DRIVER_DIR" "$KERNEL_PLATFORM_FOLDER/KernelSU/kernel")" "$DRIVER_DIR/kernelsu"
         grep -q 'obj-$(CONFIG_KSU) += kernelsu/' "$DRIVER_DIR/Makefile" || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "$DRIVER_DIR/Makefile"
         grep -q 'source "drivers/kernelsu/Kconfig"' "$DRIVER_DIR/Kconfig" || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' "$DRIVER_DIR/Kconfig"
         cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<'EOF'
