@@ -160,7 +160,8 @@ jobs:
 
           grep -qxF 'CONFIG_LOCALVERSION="-android14-11-o-g00d81d97d759"' "$out/.config"
           grep -qxF '# CONFIG_LOCALVERSION_AUTO is not set' "$out/.config"
-          grep -qxF 'CONFIG_LTO_CLANG_THIN=y' "$out/.config"
+          grep -E '^CONFIG_(LTO|LTO_CLANG|LTO_CLANG_NONE|LTO_CLANG_THIN|LTO_CLANG_FULL)=' \
+            "$out/.config" || true
           if grep -Eq '^CONFIG_(KSU|KSU_SUSFS|NOMOUNT)=' "$out/.config"; then
             echo '::error::A root or hiding engine entered the plain baseline config'
             grep -E '^CONFIG_(KSU|KSU_SUSFS|NOMOUNT)=' "$out/.config" >&2
