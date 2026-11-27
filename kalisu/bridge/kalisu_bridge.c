@@ -28,7 +28,8 @@ static ssize_t abi_show(struct kobject *kobj, struct kobj_attribute *attr, char 
 
 static ssize_t uapi_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-    return sysfs_emit(buf, "%u %u\n", KALISU_UAPI_ABI_VERSION, KALISU_UAPI_VERSION);
+    return sysfs_emit(buf, "%u %u\n", (unsigned int)KALISU_UAPI_ABI_VERSION,
+                      (unsigned int)KERNEL_SU_UAPI_VERSION);
 }
 
 static ssize_t core_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -48,9 +49,8 @@ static ssize_t runtime_show(struct kobject *kobj, struct kobj_attribute *attr, c
 static ssize_t features_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
     return sysfs_emit(buf,
-                      "authenticated_uapi=%d certificate_registry=%d "
-                      "owned_blocklist=1\n",
-                      !IS_ENABLED(CONFIG_KSU_DISABLE_MANAGER), !IS_ENABLED(CONFIG_KSU_DISABLE_MANAGER));
+                      "authenticated_uapi=1 certificate_registry=1 "
+                      "owned_identity=1\n");
 }
 
 static struct kobj_attribute identity_attr = __ATTR(identity, 0400, identity_show, NULL);

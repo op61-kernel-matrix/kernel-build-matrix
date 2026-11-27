@@ -20,10 +20,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  KALISU_SOURCE_COMMIT: d1a0836256189898bd4738263e8c64a60e497788
+  KALISU_CORE_COMMIT: 548d1dda060ca198823d8808804d01f5209ef4a9
+  KALISU_MANAGER_PACKAGE: osbocc.wiyjay.urkykk
+  KALISU_MANAGER_APK_SHA256: 928a49039ae758720e0a0ffb1918102e78464f0e346285f32bdd9e391c773848
   KALISU_CERT_SIZE: "0x53b"
   KALISU_CERT_SHA256: d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546
-  SUSFS_COMMIT: f76b81f2a6bf98e4029cc0c823c054edbec29803
+  SUSFS_COMMIT: 69b8e734920b8f9ed885ab8d112969719698e242
   EXPECTED_ZIP: KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0.zip
   RELEASE_TAG: kalisu-op13r-full-gki2-v1
 
@@ -46,10 +48,10 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           ## KaliSU OP13R full GKI 2.0 canary
 
-          This replaces the failed minimal native candidate. It uses the full
-          OnePlus 13R GKI build/config/package path represented by the supplied
-          BakaSU/Fatal kernels, but the root core, manager identity and bridge
-          are KaliSU-owned.
+          This replaces the failed newer-core candidate. It pins the exact
+          GKI2 root/SuSFS mechanics used by the supplied physically booting
+          reference, while manager authority, public identity and Bridge ABI
+          are replaced with values extracted from the released KaliSU APK.
 
           A green workflow proves compilation and static contract checks only.
           It does **not** mean this Image booted on the physical OnePlus 13R.
@@ -70,22 +72,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jq -e --arg commit "$KALISU_SOURCE_COMMIT" \
+          jq -e --arg commit "$KALISU_CORE_COMMIT" \
+                --arg package "$KALISU_MANAGER_PACKAGE" \
+                --arg apk_hash "$KALISU_MANAGER_APK_SHA256" \
                 --arg size "$KALISU_CERT_SIZE" \
                 --arg hash "$KALISU_CERT_SHA256" \
             '.product == "KaliSU" and .version == "3.0.0" and
-             .version_code == 30000 and .source_commit == $commit and
+             .version_code == 30000 and
+             .core_compatibility_commit == $commit and
+             .manager_package == $package and .manager_apk_sha256 == $apk_hash and
              .manager_certificate_size == $size and
              .manager_certificate_sha256 == $hash and
+             .bridge_ioctl == "0xc0304b17" and .bridge_struct_size == 48 and
+             .bridge_magic == "0x4b534231" and
              .bridge_abi == 1 and .uapi_version == 7' \
             kalisu/source.json >/dev/null
-          grep -qF 'KSU_VERSION_FULL := v3.0.0-d1a08362@KaliSU' kalisu/Kbuild
-          grep -qF 'KSU_PACKAGE_NAME ?= com.nostalgicmultiverse.kalisu.manager' kalisu/Kbuild
-          grep -qF 'KSU_EXPECTED_SIZE ?= 0x53b' kalisu/Kbuild
-          grep -qF "KSU_EXPECTED_HASH ?= $KALISU_CERT_SHA256" kalisu/Kbuild
-          grep -qF 'kalisu-objs += bridge/kalisu_bridge.o' kalisu/Kbuild
-          grep -qF 'KALISU_IOCTL_BRIDGE' kalisu/supercall/dispatch.c
-          grep -qF '.perm_check = only_manager' kalisu/supercall/dispatch.c
+          grep -qF "_IOWR('K', 23, struct kalisu_bridge_cmd)" \
+            .github/scripts/adapt-bakasu-core-to-kalisu.py
+          grep -qF '0x4b534231U' .github/scripts/adapt-bakasu-core-to-kalisu.py
+          grep -qF 'KALISU_BRIDGE_ABI_VERSION, 1' .github/scripts/adapt-bakasu-core-to-kalisu.py
+          grep -qF 'KERNEL_SU_UAPI_VERSION = 7' .github/scripts/adapt-bakasu-core-to-kalisu.py
+          grep -qF "$KALISU_MANAGER_PACKAGE" .github/scripts/adapt-bakasu-core-to-kalisu.py
+          grep -qF "$KALISU_CERT_SHA256" .github/scripts/adapt-bakasu-core-to-kalisu.py
           grep -qF 'revision="7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac"' \
             manifests/a16/oneplus_13r_6.1.157_w.xml
           grep -qF 'revision="dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7"' \
@@ -116,7 +124,7 @@ jobs:
             "susfs":true,
             "susfs_version":"2.4.0",
             "susfs_family":"android14-6.1",
-            "susfs_commit":"f76b81f2a6bf98e4029cc0c823c054edbec29803",
+            "susfs_commit":"69b8e734920b8f9ed885ab8d112969719698e242",
             "opt":true,
             "ds":true,
             "bbg":true,
@@ -140,7 +148,7 @@ jobs:
           op_config_json: ${{ steps.config.outputs.json }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           ksu_type: KaliSU
-          ksu_branch_or_hash: ${{ env.KALISU_SOURCE_COMMIT }}
+          ksu_branch_or_hash: ${{ env.KALISU_CORE_COMMIT }}
           susfs_commit_hash_or_branch: ${{ env.SUSFS_COMMIT }}
           use_nomount: false
           optimize_level: O2
@@ -171,8 +179,8 @@ jobs:
           file /tmp/kalisu-op13r-Image | grep -qi 'Linux kernel ARM64 boot executable Image'
           strings -a /tmp/kalisu-op13r-Image > /tmp/kalisu-op13r-strings
 
-          grep -Fq 'v3.0.0-d1a08362@KaliSU' /tmp/kalisu-op13r-strings
-          grep -Fq 'com.nostalgicmultiverse.kalisu.manager' /tmp/kalisu-op13r-strings
+          grep -Fq 'v3.0.0-548d1dda@KaliSU' /tmp/kalisu-op13r-strings
+          grep -Fq "$KALISU_MANAGER_PACKAGE" /tmp/kalisu-op13r-strings
           grep -Fq "$KALISU_CERT_SHA256" /tmp/kalisu-op13r-strings
           grep -Fq 'KaliSU Bridge v%u diagnostic endpoint ready' /tmp/kalisu-op13r-strings
           grep -Fq 'KALISU_BRIDGE' /tmp/kalisu-op13r-strings
@@ -225,12 +233,15 @@ jobs:
           IMPORTANT: UNBOOTED / PHYSICAL DEVICE TEST REQUIRED.
           A successful Actions run proves compilation and static audits only.
 
-          - Root core: KaliSU 3.0.0 / 30000 at $KALISU_SOURCE_COMMIT
-          - KaliSU Bridge: authenticated ABI 1, UAPI 7
+          - Compatibility core: pinned GKI2 commit $KALISU_CORE_COMMIT
+          - Public root identity/version: KaliSU 3.0.0 / 30000
+          - Manager package: $KALISU_MANAGER_PACKAGE
+          - Manager APK SHA-256: $KALISU_MANAGER_APK_SHA256
+          - KaliSU Bridge: authenticated ABI 1, UAPI 7, ioctl 0xc0304b17
           - Manager certificate: $KALISU_CERT_SHA256 (size $KALISU_CERT_SIZE)
-          - Randomized manager packages: authorized by certificate fallback
+          - Manager authorization: exact package plus exact release certificate
           - SuSFS: v2.4.0 at $SUSFS_COMMIT, full nine-capability integration
-          - BakaSU/KernelSU-Next identity substitution: none
+          - Baka manager package/certificate: rejected by static audit
           - NoMount: excluded
           - clean=false with reusable ccache
           - Image SHA-256: $IMAGE_SHA256
@@ -263,7 +274,9 @@ jobs:
 
           - Build/static audit: passed
           - Physical boot status: **UNTESTED**
-          - KaliSU source: `$KALISU_SOURCE_COMMIT`
+          - GKI2 compatibility core: `$KALISU_CORE_COMMIT`
+          - KaliSU manager package: `$KALISU_MANAGER_PACKAGE`
+          - KaliSU manager APK: `$KALISU_MANAGER_APK_SHA256`
           - KaliSU manager certificate: `$KALISU_CERT_SHA256`
           - SuSFS 2.4.0: `$SUSFS_COMMIT`
           - OnePlus common source: `7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac`

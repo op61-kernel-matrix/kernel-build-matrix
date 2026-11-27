@@ -1075,51 +1075,56 @@ runs:
         echo "NostalgiKSU source: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
-    - name: Add current KaliSU 3.0.0 source and Bridge
+    - name: Add boot-proven GKI2 core with KaliSU manager authority
       shell: bash
       if: ${{ inputs.ksu_type == 'KaliSU' }}
       run: |
         set -euo pipefail
-        echo "::group::Add current KaliSU 3.0.0 source and Bridge"
+        echo "::group::Add boot-proven GKI2 core with KaliSU manager authority"
         cd "$KERNEL_PLATFORM_FOLDER"
         rm -rf KernelSU
 
-        jq -e '.product == "KaliSU" and
-               .version == "3.0.0" and
+        jq -e '.product == "KaliSU" and .version == "3.0.0" and
                .version_code == 30000 and
-               .source_commit == "d1a0836256189898bd4738263e8c64a60e497788" and
+               .manager_package == "osbocc.wiyjay.urkykk" and
+               .manager_apk_sha256 == "928a49039ae758720e0a0ffb1918102e78464f0e346285f32bdd9e391c773848" and
+               .core_compatibility_commit == "548d1dda060ca198823d8808804d01f5209ef4a9" and
                .manager_certificate_size == "0x53b" and
                .manager_certificate_sha256 == "d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546" and
+               .bridge_ioctl == "0xc0304b17" and .bridge_struct_size == 48 and
+               .bridge_magic == "0x4b534231" and
                .bridge_abi == 1 and .uapi_version == 7' \
           "$GITHUB_WORKSPACE/action-source/kalisu/source.json" >/dev/null
 
-        # Use the real KaliSU tree and its owned manager/kernel Bridge.  Never
-        # substitute a foreign root engine or accept a foreign manager cert.
-        mkdir -p KernelSU
-        cp -a "$GITHUB_WORKSPACE/action-source/kalisu" KernelSU/kernel
-        # GitHub's source archive represented include/uapi as a plain file
-        # containing the original symlink target.  Recreate the link for this
-        # relocated tree so both the kernel objects and the nolibc preinit
-        # runner resolve uapi/supercall.h from KernelSU/kernel/uapi.  Keep the
-        # conventional outer KernelSU/kernel layout because the reviewed
-        # SuSFS compatibility patches are rooted at kernel/.
-        rm -f KernelSU/kernel/include/uapi
-        ln -s ../uapi KernelSU/kernel/include/uapi
+        # Start from the exact core commit used by the physically booting
+        # huangdihd OP13R GKI2 release, then replace only manager authority,
+        # public identity and Bridge ABI with values extracted from the released
+        # KaliSU 3.0.0-30000-7 APK.  Hook/preinit/SuSFS mechanics stay pinned.
+        curl --fail --location --proto '=https' -LSs \
+          "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | \
+          bash -s "${{ inputs.ksu_branch_or_hash }}"
+        test "$(git -C KernelSU rev-parse HEAD)" = "${{ inputs.ksu_branch_or_hash }}"
+        python3 -I "$GITHUB_WORKSPACE/action-source/.github/scripts/adapt-bakasu-core-to-kalisu.py" \
+          --root KernelSU \
+          --bridge-source "$GITHUB_WORKSPACE/action-source/kalisu/bridge"
+
         test -f KernelSU/kernel/Kbuild
         test -f KernelSU/kernel/Kconfig
         test -f KernelSU/kernel/supercall/dispatch.c
-        test -f KernelSU/kernel/manager/manager_identity.h
+        test -f KernelSU/kernel/manager/manager_sign.h
         test -f KernelSU/kernel/bridge/kalisu_bridge.c
-        test -L KernelSU/kernel/include/uapi
-        test -f KernelSU/kernel/include/uapi/supercall.h
-        grep -qF 'REPO_NAME   := KaliSU' KernelSU/kernel/Kbuild
-        grep -qF 'VERSION_BASE    := 30000' KernelSU/kernel/Kbuild
-        grep -qF 'KSU_PACKAGE_NAME ?= com.nostalgicmultiverse.kalisu.manager' KernelSU/kernel/Kbuild
-        grep -qF 'KSU_EXPECTED_SIZE ?= 0x53b' KernelSU/kernel/Kbuild
-        grep -qF 'KSU_EXPECTED_HASH ?= d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' KernelSU/kernel/Kbuild
-        grep -qF 'kalisu-objs += bridge/kalisu_bridge.o' KernelSU/kernel/Kbuild
+        test -f KernelSU/uapi/supercall.h
+        grep -qF 'REPO_NAME := KaliSU' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_VERSION := 30000' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_VERSION_FULL := v3.0.0-548d1dda@KaliSU' KernelSU/kernel/Kbuild
+        grep -qF 'KSU_MANAGER_PACKAGE := osbocc.wiyjay.urkykk' KernelSU/kernel/Kbuild
+        grep -qF '#define EXPECTED_SIZE_BAKASU 0x53b' KernelSU/kernel/manager/manager_sign.h
+        grep -qF 'd8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' KernelSU/kernel/manager/manager_sign.h
+        grep -qF 'kernelsu-objs += bridge/kalisu_bridge.o' KernelSU/kernel/Kbuild
         grep -qF 'KALISU_IOCTL_BRIDGE' KernelSU/kernel/supercall/dispatch.c
-        KSU_COMMIT_SHA=d1a0836256189898bd4738263e8c64a60e497788
+        grep -qF "_IOWR('K', 23, struct kalisu_bridge_cmd)" KernelSU/uapi/supercall.h
+        grep -qF 'static const __u32 KERNEL_SU_UAPI_VERSION = 7;' KernelSU/uapi/supercall.h
+        KSU_COMMIT_SHA="${{ inputs.ksu_branch_or_hash }}"
 
         DRIVER_DIR="$COMMON_KERNEL_FOLDER/drivers"
         ln -sfn "$(realpath --relative-to="$DRIVER_DIR" "$KERNEL_PLATFORM_FOLDER/KernelSU/kernel")" "$DRIVER_DIR/kernelsu"
@@ -1131,6 +1136,7 @@ runs:
         CONFIG_KALLSYMS_ALL=y
         CONFIG_THREAD_INFO_IN_TASK=y
         CONFIG_KSU_MANUAL_SU=y
+        CONFIG_KSU_MULTI_MANAGER_SUPPORT=n
         EOF
 
         echo "NEED_HOOKS=false" >> "$GITHUB_ENV"
@@ -1138,7 +1144,7 @@ runs:
         echo "KSUVER=30000-bridge1" >> "$GITHUB_ENV"
         echo "KaliSU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
         echo "30000-bridge1" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
-        echo "KaliSU native source: $KSU_COMMIT_SHA"
+        echo "KaliSU manager authority on boot-proven GKI2 core: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
     - name: Integrate latest NoMount inline VFS engine
@@ -1226,42 +1232,21 @@ runs:
               cd "$KSU_FOLDER"
               patch -p1 --forward < "$GITHUB_ACTION_PATH/patches/bakasu-priority-uid-dispatch.patch"
             elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-              echo "Applying the reviewed SuSFS 2.4 compatibility flow to KaliSU"
+              # This is the exact integration route of the physically booting
+              # Baka-based OP13R build: the pinned core already contains the
+              # SuSFS dispatcher/Kconfig hooks, so do not apply the generic
+              # KernelSU compatibility patch on top of it.
+              echo "Using the pinned GKI2 core's native SuSFS 2.4 integration"
               cd "$KSU_FOLDER"
-              patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
-              while IFS= read -r reject; do
-                rejected_file=$(basename "$reject" .rej)
-                fix_patch="$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/fix_${rejected_file}.patch"
-                if [ "$reject" = "./kernel/feature/selinux_hide.c.rej" ]; then
-                  echo "Deferring KaliSU SELinux-hide reconciliation to the reviewed structural adapter"
-                  grep -q 'static int ksu_selinux_hide_enable' kernel/feature/selinux_hide.c
-                  grep -q 'static void ksu_selinux_hide_unhook' kernel/feature/selinux_hide.c
-                  grep -q 'static void initialize_fake_status' kernel/feature/selinux_hide.c
-                  rm -f "$reject"
-                  continue
-                fi
-                if [ ! -f "$fix_patch" ]; then
-                  echo "::error::No reviewed KaliSU compatibility patch for $reject"
-                  cat "$reject"
-                  exit 1
-                fi
-                echo "Applying reviewed KaliSU fix: $(basename "$fix_patch")"
-                patch -p1 --forward < "$fix_patch"
-                rm -f "$reject"
-              done < <(find ./kernel -maxdepth 3 -name '*.rej' -print | sort)
-              patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/overwrite_hook_mode.patch"
-              patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/next/susfs_fix_patches/$susfs_version/ksu_toolkit.patch"
-              python3 -I "$GITHUB_WORKSPACE/.github/scripts/kalisu-susfs-selinux-hide.py" \
-                kernel/feature/selinux_hide.c
-              if [ -n "$(find ./kernel -name '*.rej' -print -quit)" ]; then
-                echo "::error::Unhandled KaliSU SuSFS integration reject remains"
+              grep -q '^config KSU_SUSFS$' kernel/Kconfig
+              grep -q '^config KSU_SUSFS_SUS_PATH$' kernel/Kconfig
+              grep -q 'susfs_compat.mk' kernel/Kbuild
+              grep -q 'CMD_SUSFS_ADD_SUS_PATH' kernel/supercall/dispatch.c
+              if find ./kernel -name '*.rej' -print -quit | grep -q .; then
+                echo "::error::Unexpected reject in native SuSFS integration"
                 find ./kernel -name '*.rej' -print -exec cat {} \;
                 exit 1
               fi
-              grep -q '^config KSU_SUSFS$' kernel/Kconfig
-              grep -q '^config KSU_SUSFS_SUS_PATH$' kernel/Kconfig
-              grep -q 'susfs' kernel/Kbuild
-              grep -q 'CMD_SUSFS' kernel/supercall/dispatch.c
             else
               echo "NostalgiKSU already provides the native SuSFS dispatch for $susfs_version; no foreign dispatch patch applied"
             fi
@@ -1710,7 +1695,7 @@ runs:
         CONFIG_SECCOMP_FILTER=y
         EOF
 
-        # The pinned KSUN compatibility bridge and Ante0 2.4.0 kernel patch
+        # The pinned GKI2 compatibility core and SuSFS 2.4.0 kernel patch
         # guard their direct filesystem hooks with CONFIG_KSU_SUSFS.  They do
         # not define the legacy KSU_HOOK_SUSFS_INLINE Kconfig symbol.
         if [ "${{ inputs.ksu_type }}" != "KaliSU" ]; then
@@ -3054,11 +3039,11 @@ runs:
           exit 1
         fi
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          grep -qF -- '-- KaliSU version: 30000 [v3.0.0-d1a08362@KaliSU]' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Reviewed KaliSU version/tag line missing"; exit 1; }
-          grep -qF -- '-- KaliSU Manager signature size: 0x53b' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Current KaliSU Manager certificate size missing from compiled Kbuild contract"; exit 1; }
-          grep -qF -- '-- KaliSU Manager signature hash: d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Current KaliSU Manager certificate hash missing from compiled Kbuild contract"; exit 1; }
-          grep -qF 'v3.0.0-d1a08362@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
-          grep -qF 'com.nostalgicmultiverse.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU canonical Manager package identity missing"; exit 1; }
+          grep -qF -- '-- KaliSU version code: 30000' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU version code missing"; exit 1; }
+          grep -qF -- '-- KaliSU version name: v3.0.0-548d1dda@KaliSU' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU version name missing"; exit 1; }
+          grep -qF -- '-- KernelSU Manager package name: osbocc.wiyjay.urkykk' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Released KaliSU package identity missing from compiled Kbuild contract"; exit 1; }
+          grep -qF 'v3.0.0-548d1dda@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Adapted KaliSU source marker missing"; exit 1; }
+          grep -qF 'osbocc.wiyjay.urkykk' "$IMAGE_STRINGS" || { echo "::error::Released KaliSU Manager package identity missing"; exit 1; }
           grep -qF 'd8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' "$IMAGE_STRINGS" || { echo "::error::KaliSU randomized-package certificate identity missing"; exit 1; }
           grep -qF 'KaliSU Bridge v%u diagnostic endpoint ready' "$IMAGE_STRINGS" || { echo "::error::KaliSU Bridge diagnostic endpoint missing"; exit 1; }
           grep -qF 'KALISU_BRIDGE' "$IMAGE_STRINGS" || { echo "::error::Authenticated KaliSU Bridge command missing"; exit 1; }
@@ -3078,6 +3063,10 @@ runs:
         # survive as literal strings in Image. Audit the effective final build
         # config instead; it is the authoritative source for enabled features.
         FINAL_CONFIG="$COMMON_KERNEL_FOLDER/out/.config"
+        if grep -qx 'CONFIG_KSU_MULTI_MANAGER_SUPPORT=y' "$FINAL_CONFIG"; then
+          echo "::error::Foreign multi-manager certificate registry is enabled"
+          exit 1
+        fi
         if [ ! -s "$FINAL_CONFIG" ]; then
           FINAL_CONFIG=$(find "$COMMON_KERNEL_FOLDER/out" -type f -name .config -print -quit)
         fi
