@@ -41,7 +41,7 @@ DECLARE_RWSEM(mount_list_lock);
 
 /*
  * The legacy add/del/wipe handling lived inline in supercall/dispatch.c.
- * We hoist it here so that KSU_IOCTL_EXTENSION is the only entry point.
+ * We hoist it here so that KALISU_IOCTL_EXTENSION is the only entry point.
  */
 static void do_wipe_umount_local(void)
 {

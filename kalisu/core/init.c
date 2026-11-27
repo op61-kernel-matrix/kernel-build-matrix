@@ -32,6 +32,7 @@
 #include "infra/symbol_resolver.h"
 #include "preinit/preinit.h"
 #include "extension/extension.h"
+#include "bridge/kalisu_bridge.h"
 
 #if defined(__x86_64__) && !defined(CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER)
 #include <asm/cpufeature.h>
@@ -149,8 +150,22 @@ int __init kernelsu_init(void)
     pr_info("initializing symbol resolver\n");
     ksu_init_symbol_resolver();
 
+    ret = kalisu_bridge_init();
+    if (ret) {
+        pr_err("KaliSU Bridge init failed: %d\n", ret);
+        put_cred(ksu_cred);
+        ksu_cred = NULL;
+        return ret;
+    }
+
+    // Apply the KaliSU blocklist before userspace starts loading vendor
+    // modules. LKM boot patching has already reconciled modules.blocklist;
+    // native builds must use an audited device-specific Kconfig default.
+    kalisu_module_blacklist_apply();
+
     ret = ksu_selinux_inode_init();
     if (ret) {
+        kalisu_bridge_exit();
         put_cred(ksu_cred);
         ksu_cred = NULL;
         return ret;
@@ -260,8 +275,9 @@ void __exit kernelsu_exit(void)
     ksu_adb_root_exit();
     ksu_sulog_exit();
     ksu_feature_exit();
-    ksu_module_blacklist_exit();
+    kalisu_module_blacklist_exit();
     ksu_extension_exit();
+    kalisu_bridge_exit();
 
     put_cred(ksu_cred);
 }

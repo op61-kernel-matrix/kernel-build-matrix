@@ -61,13 +61,13 @@ int ksu_extension_version_spoof_io(u32 id, void __user *raw)
         cmd.working_version = version_spoof.mask & KSU_VERSION_SPOOF_WORKING_VERSION
             ? version_spoof.working_version : KERNEL_SU_VERSION;
         cmd.uapi_version = version_spoof.mask & KSU_VERSION_SPOOF_UAPI_VERSION
-            ? version_spoof.uapi_version : KERNEL_SU_UAPI_VERSION;
+            ? version_spoof.uapi_version : KALISU_UAPI_VERSION;
         if (version_spoof.mask & KSU_VERSION_SPOOF_FULL_VERSION)
             strscpy(cmd.full_version, version_spoof.full_version, sizeof(cmd.full_version));
         else
             strscpy(cmd.full_version, KSU_VERSION_FULL, sizeof(cmd.full_version));
         cmd.default_working_version = KERNEL_SU_VERSION;
-        cmd.default_uapi_version = KERNEL_SU_UAPI_VERSION;
+        cmd.default_uapi_version = KALISU_UAPI_VERSION;
         strscpy(cmd.default_full_version, KSU_VERSION_FULL, sizeof(cmd.default_full_version));
         mutex_unlock(&version_spoof_lock);
         if (copy_to_user(raw, &cmd, sizeof(cmd)))

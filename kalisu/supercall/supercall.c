@@ -20,7 +20,7 @@
 
 #define KSU_DRIVER_PERMISSION_SU_SESSION (1UL << 0)
 
-struct ksu_driver_context {
+struct kalisu_driver_context {
     unsigned long permissions;
 };
 
@@ -50,7 +50,7 @@ static const struct file_operations anon_ksu_fops = {
 
 static int ksu_install_fd_with_permissions(unsigned int fd_flags, unsigned long permissions)
 {
-    struct ksu_driver_context *context;
+    struct kalisu_driver_context *context;
     struct file *filp;
     const char *name;
     int fd;
@@ -60,7 +60,7 @@ static int ksu_install_fd_with_permissions(unsigned int fd_flags, unsigned long 
         return -ENOMEM;
 
     context->permissions = permissions;
-    name = permissions & KSU_DRIVER_PERMISSION_SU_SESSION ? "[ksu_driver_su]" : "[ksu_driver]";
+    name = permissions & KSU_DRIVER_PERMISSION_SU_SESSION ? "[kalisu_driver_su]" : "[kalisu_driver]";
 
     fd = get_unused_fd_flags(fd_flags);
     if (fd < 0) {
@@ -95,7 +95,7 @@ int ksu_install_su_fd(void)
 
 bool ksu_is_su_session_fd(const struct file *filp)
 {
-    const struct ksu_driver_context *context = filp->private_data;
+    const struct kalisu_driver_context *context = filp->private_data;
 
     return context && (context->permissions & KSU_DRIVER_PERMISSION_SU_SESSION);
 }

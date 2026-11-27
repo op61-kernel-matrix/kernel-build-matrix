@@ -8,7 +8,7 @@
  *
  * The two responsibilities share state: getting the sticky-state bit
  * reads dynamic_manager_enabled, and the io op forwards to the same
- * set/get code paths that manager UI used to call via KSU_IOCTL_MANAGER.
+ * set/get code paths that manager UI used to call via KALISU_IOCTL_MANAGER.
  */
 #include <linux/ctype.h>
 #include <linux/fs.h>

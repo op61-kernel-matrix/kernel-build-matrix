@@ -519,20 +519,12 @@ void __init ksu_extension_init(void)
  */
 void __init ksu_extension_register_all(void)
 {
-    /* KPM exposes .get (so KSU_EXTENSION_GET reports CONFIG_KPM)
-     * but no .set. Forced-by-config is applied through
-     * ksu_extension_kpm_apply_forced, a kernel-side callback that
-     * receives the raw forced_values[id] u64 and never a userspace
-     * pointer. The userspace ioctl entry point (ksu_extension_kpm_io)
-     * sees only real user addresses and forwards them to do_kpm(). */
     static const struct ksu_extension_handler kpm_handler = {
         .extension_id = KSU_EXTENSION_KPM,
         .name = "kpm",
-        /* GET reports CONFIG_KPM, but there is no runtime sticky bit. */
         .caps = 0,
-        .ops = &ksu_extension_kpm_ops,
-        .io_handler = ksu_extension_kpm_io,
-        .apply_forced = ksu_extension_kpm_apply_forced,
+        .ops = &kalisu_extension_kpm_ops,
+        .io_handler = kalisu_extension_kpm_io,
     };
     static const struct ksu_extension_handler cpu_spoof_handler = {
         .extension_id = KSU_EXTENSION_CPU_SPOOF,
@@ -584,7 +576,7 @@ void __init ksu_extension_register_all(void)
     };
 
     if (ksu_register_extension_handler(&kpm_handler))
-        pr_err("extension: failed to register kpm\n");
+        pr_err("extension: failed to register KaliSU KPM bridge\n");
     if (ksu_register_extension_handler(&cpu_spoof_handler))
         pr_err("extension: failed to register cpu_spoof\n");
     if (ksu_register_extension_handler(&umount_paths_handler))

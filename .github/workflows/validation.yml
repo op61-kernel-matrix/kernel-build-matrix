@@ -1,4 +1,4 @@
-name: Validation canary
+name: KaliSU OP13R full GKI2 canary
 
 on:
   workflow_dispatch:
@@ -7,34 +7,29 @@ on:
       - validation-canary
     paths:
       - .github/workflows/validation.yml
+      - .github/actions/build-kalisu-op13r/**
       - .github/actions/kernel-source-sync/**
+      - kalisu/**
       - manifests/a16/oneplus_13r_6.1.157_w.xml
 
 permissions:
   contents: write
 
 concurrency:
-  group: validation-canary-${{ github.ref }}
+  group: kalisu-op13r-full-gki2-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  CONFIG: OP13r-6.1.157
-  OP_MODEL: OP13r-6.1.157
-  OP_BRANCH: wild/sm8650
-  OP_OS_VERSION: A16
-  OP_MANIFEST: oneplus_13r_6.1.157_w.xml
-  OP_ANDROID_VERSION: android14
-  OP_KERNEL_VERSION: "6.1"
-  OP_C_COMPILER: kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c/bin
-  CLEAN_BUILD: "false"
-  STOCK_LOCALVERSION: -android14-11-o-g00d81d97d759
-  STOCK_BUILD_TIMESTAMP: Fri Aug 7 09:40:54 UTC 2026
-  EXPECTED_ZIP: OP13R-A16-android14-6.1.157-plain-source-baseline.zip
-  RELEASE_TAG: op13r-plain-source-baseline-v1
+  KALISU_SOURCE_COMMIT: d1a0836256189898bd4738263e8c64a60e497788
+  KALISU_CERT_SIZE: 0x53b
+  KALISU_CERT_SHA256: d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546
+  SUSFS_COMMIT: f76b81f2a6bf98e4029cc0c823c054edbec29803
+  EXPECTED_ZIP: KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0.zip
+  RELEASE_TAG: kalisu-op13r-full-gki2-v1
 
 jobs:
   build:
-    name: Plain OnePlus source - no-root boot canary
+    name: Native KaliSU + Bridge + SuSFS 2.4.0
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
@@ -44,27 +39,21 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Declare isolation scope
+      - name: Declare physical-test boundary
         shell: bash
         run: |
           set -euo pipefail
           cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          ## OP13R plain-source boot baseline
+          ## KaliSU OP13R full GKI 2.0 canary
 
-          The previous native KaliSU candidate was physically tested and did
-          **not** boot. This replacement is deliberately a no-root isolation
-          build. It contains no KaliSU/KernelSU, SuSFS, NoMount, fake-config,
-          feature, gaming, or performance patch stack.
+          This replaces the failed minimal native candidate. It uses the full
+          OnePlus 13R GKI build/config/package path represented by the supplied
+          BakaSU/Fatal kernels, but the root core, manager identity and bridge
+          are KaliSU-owned.
 
-          This is a one-time diagnostic, not the requested final kernel. If it
-          boots, the next canary adds only native KaliSU. If it does not boot,
-          the source/config/toolchain path must be corrected before KaliSU can
-          be evaluated.
-
-          A green Actions run means compile/static audit only. It does not mean
-          the OnePlus 13R booted this Image.
+          A green workflow proves compilation and static contract checks only.
+          It does **not** mean this Image booted on the physical OnePlus 13R.
           EOF
-          test "$CLEAN_BUILD" = "false"
 
       - name: Install build dependencies
         shell: bash
@@ -72,245 +61,201 @@ jobs:
           set -euo pipefail
           sudo apt-get -o Acquire::Retries=3 update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            git curl ca-certificates build-essential flex bison libelf-dev \
-            libssl-dev libncurses-dev zlib1g-dev liblz4-tool libxml2-utils \
-            rsync unzip dwarves file python3 ccache jq bc dos2unix kmod \
-            libdw-dev elfutils pigz zip aria2 cpio zstd
+            git curl ca-certificates build-essential clang lld flex bison \
+            libelf-dev libssl-dev libncurses-dev zlib1g-dev liblz4-tool \
+            libxml2-utils rsync unzip dwarves file python3 ccache jq bc \
+            dos2unix kmod libdw-dev elfutils pigz zip patch aria2 cpio zstd
 
-      - name: Verify exact pinned OnePlus inputs
+      - name: Verify KaliSU manager and Bridge pins
         shell: bash
         run: |
           set -euo pipefail
-          manifest="manifests/a16/$OP_MANIFEST"
-          grep -qF 'revision="7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac"' "$manifest"
-          grep -qF 'revision="dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7"' "$manifest"
-          grep -qF 'revision="28b975ada54f8610ed531a6b57253aed10e7c87d"' "$manifest"
-          grep -qF 'revision="0b46673ae91aee8d60bd6ee257b4d56d3f6a0114"' "$manifest"
+          jq -e --arg commit "$KALISU_SOURCE_COMMIT" \
+                --arg size "$KALISU_CERT_SIZE" \
+                --arg hash "$KALISU_CERT_SHA256" \
+            '.product == "KaliSU" and .version == "3.0.0" and
+             .version_code == 30000 and .source_commit == $commit and
+             .manager_certificate_size == $size and
+             .manager_certificate_sha256 == $hash and
+             .bridge_abi == 1 and .uapi_version == 7' \
+            kalisu/source.json >/dev/null
+          grep -qF 'KSU_VERSION_FULL := v3.0.0-d1a08362@KaliSU' kalisu/Kbuild
+          grep -qF 'KSU_PACKAGE_NAME ?= com.nostalgicmultiverse.kalisu.manager' kalisu/Kbuild
+          grep -qF 'KSU_EXPECTED_SIZE ?= 0x53b' kalisu/Kbuild
+          grep -qF "KSU_EXPECTED_HASH ?= $KALISU_CERT_SHA256" kalisu/Kbuild
+          grep -qF 'kalisu-objs += bridge/kalisu_bridge.o' kalisu/Kbuild
+          grep -qF 'KALISU_IOCTL_BRIDGE' kalisu/supercall/dispatch.c
+          grep -qF '.perm_check = only_manager' kalisu/supercall/dispatch.c
+          grep -qF 'revision="7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac"' \
+            manifests/a16/oneplus_13r_6.1.157_w.xml
+          grep -qF 'revision="dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7"' \
+            manifests/a16/oneplus_13r_6.1.157_w.xml
 
-      - name: Prepare source directory
-        shell: bash
-        run: mkdir -p "$CONFIG"
-
-      - name: Sync pinned OnePlus source and toolchain
-        uses: ./.github/actions/kernel-source-sync
-        with:
-          source_location: ${{ env.CONFIG }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          debug: false
-          local_build: true
-
-      - name: Restore warm compiler cache
-        uses: actions/cache/restore@v4
-        with:
-          path: /tmp/ccache
-          key: plain-op13r-6.1.157-r487747c-${{ github.run_id }}
-          restore-keys: |
-            plain-op13r-6.1.157-r487747c-
-
-      - name: Build untouched no-root Image
-        id: build
+      - name: Prepare full OP13R feature configuration
+        id: config
         shell: bash
         run: |
           set -euo pipefail
-          common="$GITHUB_WORKSPACE/$CONFIG/kernel_platform/common"
-          clang_bin="$GITHUB_WORKSPACE/$CONFIG/$OP_C_COMPILER"
-          build_tools="$GITHUB_WORKSPACE/$CONFIG/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin"
-          out="$common/out"
-
-          test -x "$clang_bin/clang"
-          test -f "$common/Makefile"
-          export PATH="$clang_bin:$build_tools:$PATH"
-          export ARCH=arm64 SUBARCH=arm64
-          export LLVM=1 LLVM_IAS=1
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export PAHOLE="$build_tools/pahole"
-          export KBUILD_BUILD_USER=build-user
-          export KBUILD_BUILD_HOST=build-host
-          export KBUILD_BUILD_VERSION=1
-          export KBUILD_BUILD_TIMESTAMP="$STOCK_BUILD_TIMESTAMP"
-          export SOURCE_DATE_EPOCH=1786095654
-          export CCACHE_DIR=/tmp/ccache
-          export CCACHE_BASEDIR="$GITHUB_WORKSPACE"
-          export CCACHE_MAXSIZE=5G
-          export CCACHE_COMPRESS=true
-          export CCACHE_COMPRESSLEVEL=3
-          mkdir -p "$CCACHE_DIR" "$out"
-          ccache --zero-stats
-
-          cd "$common"
-          : > .scmversion
-          cat > ld-wrapper <<'EOF'
-          #!/bin/bash
-          exec ld.lld "$@" --thinlto-jobs="$(nproc --all)"
+          cat > /tmp/op13r.json <<'EOF'
+          {
+            "model":"OP13r-6.1.157",
+            "soc":"pineapple",
+            "branch":"wild/sm8650",
+            "manifest":"oneplus_13r_6.1.157_w.xml",
+            "android_version":"android14",
+            "kernel_version":"6.1",
+            "os_version":"OOS16",
+            "lto":"thin",
+            "zyc_compiler":"",
+            "c_compiler":"kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c/bin",
+            "rust_compiler":"",
+            "bindgen":"",
+            "rust_build":false,
+            "disk_cleanup":false,
+            "hmbird":false,
+            "susfs":true,
+            "susfs_version":"2.4.0",
+            "susfs_family":"android14-6.1",
+            "susfs_commit":"f76b81f2a6bf98e4029cc0c823c054edbec29803",
+            "opt":true,
+            "ds":true,
+            "bbg":true,
+            "bbr":true,
+            "bbr3":true,
+            "ttl":true,
+            "ip_set":true,
+            "unicode":true,
+            "ntsync":true,
+            "wireguard":false,
+            "blacklist_modules":"kernelsu,oplus_security_guard,oplus_qr_scan,oplus_score,oplus_vip_task,oplus_dns_cache,oplus_network_linkpower_module,oplus_data_module,oplus_secure_harden,oplus_security_keventupload,oplus_secure_guard_new,oplus_secure_guard,coresight_tpda,coresight_tgu,coresight_trace_noc,coresight_cti,coresight_qmi,coresight_dummy,coresight_remote_etm,coresight_tpdm,coresight_uetm,coresight_stm,coresight_tmc_sec,f_fs_ipc_log,qcom_iommu_debug,qti_battery_debug,rdbg,stm_heartbeat,stm_p_ost,stm_core,stm_ftrace,stm_console,spmi_pmic_arb_debug",
+            "uname":"OP-KALISU"
+          }
           EOF
-          chmod +x ld-wrapper
+          echo "json=$(jq -c . /tmp/op13r.json)" >> "$GITHUB_OUTPUT"
 
-          make O="$out" LLVM=1 LLVM_IAS=1 \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD="$common/ld-wrapper" HOSTLD="$common/ld-wrapper" \
-            gki_defconfig
-
-          scripts/config --file "$out/.config" \
-            --set-str LOCALVERSION "$STOCK_LOCALVERSION" \
-            -d LOCALVERSION_AUTO
-          make O="$out" LLVM=1 LLVM_IAS=1 \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD="$common/ld-wrapper" HOSTLD="$common/ld-wrapper" \
-            olddefconfig
-
-          grep -qxF 'CONFIG_LOCALVERSION="-android14-11-o-g00d81d97d759"' "$out/.config"
-          grep -qxF '# CONFIG_LOCALVERSION_AUTO is not set' "$out/.config"
-          grep -E '^CONFIG_(LTO|LTO_CLANG|LTO_CLANG_NONE|LTO_CLANG_THIN|LTO_CLANG_FULL)=' \
-            "$out/.config" || true
-          if grep -Eq '^CONFIG_(KSU|KSU_SUSFS|NOMOUNT)=' "$out/.config"; then
-            echo '::error::A root or hiding engine entered the plain baseline config'
-            grep -E '^CONFIG_(KSU|KSU_SUSFS|NOMOUNT)=' "$out/.config" >&2
-            exit 1
-          fi
-
-          set -o pipefail
-          make -j"$(nproc --all)" O="$out" LLVM=1 LLVM_IAS=1 \
-            CC="ccache clang" HOSTCC="ccache clang" \
-            LD="$common/ld-wrapper" HOSTLD="$common/ld-wrapper" \
-            Image 2>&1 | tee build.log
-
-          image="$out/arch/arm64/boot/Image"
-          test -s "$image"
-          file "$image" | grep -qi 'Linux kernel ARM64 boot executable Image'
-          image_sha256=$(sha256sum "$image" | awk '{print $1}')
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-          echo "config=$out/.config" >> "$GITHUB_OUTPUT"
-          echo "image_sha256=$image_sha256" >> "$GITHUB_OUTPUT"
-          ccache --show-stats
-
-      - name: Save compiler cache immediately after build
-        uses: actions/cache/save@v4
+      - name: Build full KaliSU GKI2 candidate
+        id: build
+        uses: ./.github/actions/build-kalisu-op13r
         with:
-          path: /tmp/ccache
-          key: plain-op13r-6.1.157-r487747c-${{ github.run_id }}
+          op_config_json: ${{ steps.config.outputs.json }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          ksu_type: KaliSU
+          ksu_branch_or_hash: ${{ env.KALISU_SOURCE_COMMIT }}
+          susfs_commit_hash_or_branch: ${{ env.SUSFS_COMMIT }}
+          use_nomount: false
+          optimize_level: O2
+          gaming_profile: false
+          clean: false
+          debug: false
 
-      - name: Static audit plain baseline
+      - name: Audit manager recognition, Bridge and SuSFS
         id: audit
         shell: bash
         env:
-          IMAGE: ${{ steps.build.outputs.image }}
-          CONFIG_FILE: ${{ steps.build.outputs.config }}
+          ZIP_NAME: ${{ steps.build.outputs.zip_name }}
+          KERNEL_VERSION: ${{ steps.build.outputs.kernel_version }}
+          KSU_VERSION: ${{ steps.build.outputs.ksu_version }}
+          SUSFS_VERSION: ${{ steps.build.outputs.susfs_version }}
         run: |
           set -euo pipefail
-          strings -a "$IMAGE" > /tmp/plain-image-strings
-          grep -Fq 'Linux version 6.1.157-android14-11-o-g00d81d97d759' /tmp/plain-image-strings
-          grep -Fq 'build-user@build-host' /tmp/plain-image-strings
-          grep -Fq '#1 SMP PREEMPT Fri Aug  7 09:40:54 UTC 2026' /tmp/plain-image-strings || \
-            grep -Fq '#1 SMP PREEMPT Fri Aug 7 09:40:54 UTC 2026' /tmp/plain-image-strings
-          if grep -qiE 'KaliSU|KernelSU|SUSFS_VERSION|CONFIG_KSU_SUSFS|NoMount' /tmp/plain-image-strings; then
-            echo '::error::Root/hiding-engine identity found in the plain Image'
-            grep -iEm 20 'KaliSU|KernelSU|SUSFS_VERSION|CONFIG_KSU_SUSFS|NoMount' /tmp/plain-image-strings >&2
+          test "$KERNEL_VERSION" = "android14-6.1.157"
+          test "$KSU_VERSION" = "30000-bridge1"
+          test "$SUSFS_VERSION" = "v2.4.0"
+          test "$ZIP_NAME" = "$EXPECTED_ZIP"
+
+          zip_path=$(find "$GITHUB_WORKSPACE" -type f -name "$EXPECTED_ZIP" -print -quit)
+          test -n "$zip_path"
+          unzip -t "$zip_path" >/dev/null
+          unzip -p "$zip_path" Image > /tmp/kalisu-op13r-Image
+          test -s /tmp/kalisu-op13r-Image
+          file /tmp/kalisu-op13r-Image | grep -qi 'Linux kernel ARM64 boot executable Image'
+          strings -a /tmp/kalisu-op13r-Image > /tmp/kalisu-op13r-strings
+
+          grep -Fq 'v3.0.0-d1a08362@KaliSU' /tmp/kalisu-op13r-strings
+          grep -Fq 'com.nostalgicmultiverse.kalisu.manager' /tmp/kalisu-op13r-strings
+          grep -Fq "$KALISU_CERT_SHA256" /tmp/kalisu-op13r-strings
+          grep -Fq 'KaliSU Bridge v%u diagnostic endpoint ready' /tmp/kalisu-op13r-strings
+          grep -Fq 'KALISU_BRIDGE' /tmp/kalisu-op13r-strings
+          grep -Fq 'susfs is initialized! version: v2.4.0' /tmp/kalisu-op13r-strings
+          grep -Fq 'CONFIG_KSU_SUSFS_SPOOF_UNAME' /tmp/kalisu-op13r-strings
+          grep -Fq 'CONFIG_KSU_SUSFS_OPEN_REDIRECT' /tmp/kalisu-op13r-strings
+
+          # Match the physically booted huangdihd/BakaSU GKI2 packaging
+          # boundary: replace only boot's Image and do not install, delete or
+          # rewrite any vendor modules.  The OnePlus blacklist is retained as
+          # policy input, but it is not an AnyKernel module operation.
+          unzip -p "$zip_path" anykernel.sh > /tmp/kalisu-anykernel.sh
+          grep -Eq '^block=boot$' /tmp/kalisu-anykernel.sh
+          grep -Eq '^do\.modules=0$' /tmp/kalisu-anykernel.sh
+          grep -Fq 'split_boot' /tmp/kalisu-anykernel.sh
+          if unzip -Z1 "$zip_path" | grep -Eq '(^|/)modules/|\.ko$'; then
+            echo '::error::GKI2 ZIP must not carry or mutate vendor modules'
             exit 1
           fi
-          if grep -Eq '^CONFIG_(KSU|KSU_SUSFS|NOMOUNT)=' "$CONFIG_FILE"; then
-            echo '::error::Root/hiding-engine Kconfig found in the plain build'
+
+          if grep -qiE 'com\.resukisu\.resukisu|d3469712b6214462764a1d8d3e5cbe1d6819a0b629791b9f4101867821f1df64|OP-BAKASU|huangdihd' /tmp/kalisu-op13r-strings; then
+            echo '::error::BakaSU/ReSukiSU manager identity leaked into KaliSU Image'
+            exit 1
+          fi
+          if grep -qiE 'KernelSU-Next|OP-WILD|fatalcoder' /tmp/kalisu-op13r-strings; then
+            echo '::error::Foreign root/kernel identity leaked into KaliSU Image'
             exit 1
           fi
 
-      - name: Package with proven OP13R AnyKernel3 path
-        id: package
-        shell: bash
-        env:
-          IMAGE: ${{ steps.build.outputs.image }}
-        run: |
-          set -euo pipefail
-          ak3="$GITHUB_WORKSPACE/$CONFIG/AnyKernel3"
-          artifacts="$GITHUB_WORKSPACE/artifacts"
-          test -f "$ak3/anykernel.sh"
-          test -f "$ak3/tools/ak3-core.sh"
-          cp "$IMAGE" "$ak3/Image"
-          AK3_FILE="$ak3/anykernel.sh" python3 - <<'PY'
-          import os
-          from pathlib import Path
-
-          path = Path(os.environ["AK3_FILE"])
-          lines = path.read_text().splitlines()
-          for index, line in enumerate(lines):
-              if line.startswith("kernel.string="):
-                  lines[index] = "kernel.string=OP13R plain OnePlus source boot baseline"
-                  break
-          else:
-              raise SystemExit("kernel.string missing from AnyKernel3")
-          path.write_text("\n".join(lines) + "\n")
-          PY
-
-          sed -i 's/^do.check_boot_version=.*/do.check_boot_version=1/' "$ak3/anykernel.sh"
-          grep -Fq 'block=boot' "$ak3/anykernel.sh"
-          grep -Fq 'is_slot_device=auto' "$ak3/anykernel.sh"
-          grep -Fq 'do.check_boot_version=1' "$ak3/anykernel.sh"
-          mkdir -p "$artifacts"
-          cd "$ak3"
-          zip -r9 "$artifacts/$EXPECTED_ZIP" ./* \
-            -x '*.git*' -x README.md -x "$EXPECTED_ZIP"
-          unzip -t "$artifacts/$EXPECTED_ZIP" >/dev/null
-          unzip -l "$artifacts/$EXPECTED_ZIP" | grep -qE '[[:space:]]Image$'
-          zip_sha256=$(sha256sum "$artifacts/$EXPECTED_ZIP" | awk '{print $1}')
-          echo "zip=$artifacts/$EXPECTED_ZIP" >> "$GITHUB_OUTPUT"
+          image_sha256=$(sha256sum /tmp/kalisu-op13r-Image | awk '{print $1}')
+          zip_sha256=$(sha256sum "$zip_path" | awk '{print $1}')
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+          echo "image_sha256=$image_sha256" >> "$GITHUB_OUTPUT"
           echo "zip_sha256=$zip_sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Upload plain baseline artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.EXPECTED_ZIP }}
-          path: ${{ steps.package.outputs.zip }}
-          compression-level: 0
-          retention-days: 30
-
-      - name: Publish unbooted no-root prerelease
+      - name: Publish unbooted full-GKI2 prerelease
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ZIP_PATH: ${{ steps.package.outputs.zip }}
-          IMAGE_SHA256: ${{ steps.build.outputs.image_sha256 }}
-          ZIP_SHA256: ${{ steps.package.outputs.zip_sha256 }}
+          ZIP_PATH: ${{ steps.audit.outputs.zip_path }}
+          IMAGE_SHA256: ${{ steps.audit.outputs.image_sha256 }}
+          ZIP_SHA256: ${{ steps.audit.outputs.zip_sha256 }}
         run: |
           set -euo pipefail
           notes=$(mktemp)
           cat > "$notes" <<EOF
-          Plain OnePlus-source boot-isolation candidate for OnePlus 13R CPH2691,
+          Full KaliSU GKI 2.0 canary for OnePlus 13R CPH2691,
           OOS 16.0.10.600(EX01), android14-6.1.157.
 
-          IMPORTANT: UNBOOTED / DEVICE TEST REQUIRED.
-          A successful Actions run proves compile and static audit only.
+          IMPORTANT: UNBOOTED / PHYSICAL DEVICE TEST REQUIRED.
+          A successful Actions run proves compilation and static audits only.
 
-          This candidate intentionally contains:
-          - No KaliSU or other KernelSU implementation
-          - No SuSFS
-          - No NoMount
-          - No fake-config, performance, gaming, or feature patch stack
-          - Stock-shaped release: 6.1.157-android14-11-o-g00d81d97d759
-          - OnePlus common source: 7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac
-          - Modules/devicetree source: dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7
-          - Clang: r487747c
+          - Root core: KaliSU 3.0.0 / 30000 at $KALISU_SOURCE_COMMIT
+          - KaliSU Bridge: authenticated ABI 1, UAPI 7
+          - Manager certificate: $KALISU_CERT_SHA256 (size $KALISU_CERT_SIZE)
+          - Randomized manager packages: authorized by certificate fallback
+          - SuSFS: v2.4.0 at $SUSFS_COMMIT, full nine-capability integration
+          - BakaSU/KernelSU-Next identity substitution: none
+          - NoMount: excluded
           - clean=false with reusable ccache
           - Image SHA-256: $IMAGE_SHA256
           - ZIP SHA-256: $ZIP_SHA256
 
-          This must boot successfully before native KaliSU is reintroduced.
-          Keep the stock boot image ready for recovery.
+          The earlier native baseline failed to boot and is not evidence for this
+          candidate. Keep the stock boot image ready for recovery.
           EOF
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --prerelease \
-              --title 'OP13R plain-source baseline v1 - UNBOOTED' \
+              --title 'KaliSU OP13R full GKI2 v1 - UNBOOTED' \
               --notes-file "$notes"
           else
             gh release create "$RELEASE_TAG" --prerelease --target "${{ github.sha }}" \
-              --title 'OP13R plain-source baseline v1 - UNBOOTED' \
+              --title 'KaliSU OP13R full GKI2 v1 - UNBOOTED' \
               --notes-file "$notes"
           fi
           gh release upload "$RELEASE_TAG" "$ZIP_PATH#$EXPECTED_ZIP" --clobber
 
-      - name: Record provenance and physical-test boundary
+      - name: Record provenance
         shell: bash
         env:
-          IMAGE_SHA256: ${{ steps.build.outputs.image_sha256 }}
-          ZIP_SHA256: ${{ steps.package.outputs.zip_sha256 }}
+          IMAGE_SHA256: ${{ steps.audit.outputs.image_sha256 }}
+          ZIP_SHA256: ${{ steps.audit.outputs.zip_sha256 }}
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
@@ -318,8 +263,11 @@ jobs:
 
           - Build/static audit: passed
           - Physical boot status: **UNTESTED**
-          - Isolation level: plain OnePlus source, no root/hiding engines
-          - clean: `$CLEAN_BUILD`
+          - KaliSU source: `$KALISU_SOURCE_COMMIT`
+          - KaliSU manager certificate: `$KALISU_CERT_SHA256`
+          - SuSFS 2.4.0: `$SUSFS_COMMIT`
+          - OnePlus common source: `7a7ae28e849b0f9b42b8b6fc26feebe1864bf7ac`
+          - Modules/devicetree source: `dda73f7205501c09f7d0f48fd5f6d7f4b2220ca7`
           - Stock boot SHA-256: `a7bd7452ccf0f0c98057394c56406b74bf65d55c69bad8ec37b1e440c5568710`
           - Built Image SHA-256: `$IMAGE_SHA256`
           - Flashable ZIP SHA-256: `$ZIP_SHA256`

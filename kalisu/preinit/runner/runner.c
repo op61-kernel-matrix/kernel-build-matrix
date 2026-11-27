@@ -325,24 +325,24 @@ struct module_ctx {
  * (same mechanism ksud uses). Cached across modules; -1 once we know it is
  * unavailable so we only probe the kernel once.
  */
-static int ksu_driver_fd = -1;
-static int ksu_driver_probed;
+static int kalisu_driver_fd = -1;
+static int kalisu_driver_probed;
 
 static int ksu_get_driver_fd(void)
 {
     int fd = -1;
 
-    if (ksu_driver_probed)
-        return ksu_driver_fd;
-    ksu_driver_probed = 1;
+    if (kalisu_driver_probed)
+        return kalisu_driver_fd;
+    kalisu_driver_probed = 1;
 
     /* The KSU reboot kprobe writes the installed anon fd back into *arg. */
     sys_reboot(KSU_INSTALL_MAGIC1, KSU_INSTALL_MAGIC2, 0, &fd);
     if (fd >= 0)
-        ksu_driver_fd = fd;
+        kalisu_driver_fd = fd;
     else
         klog("ksu driver fd unavailable, insmod cannot bind non-exported symbols");
-    return ksu_driver_fd;
+    return kalisu_driver_fd;
 }
 
 static int open_checked(const struct module_ctx *m, const char *path)
@@ -431,7 +431,7 @@ static int flush_lookup(const struct module_ctx *m, const char *path, int drv, u
     };
     uint32_t i;
     /* sys_ioctl returns -errno directly, otherwise the number found */
-    int ret = sys_ioctl(drv, KSU_IOCTL_LOOKUP_SYMBOLS, (unsigned long)&cmd);
+    int ret = sys_ioctl(drv, KALISU_IOCTL_LOOKUP_SYMBOLS, (unsigned long)&cmd);
 
     if (ret < 0) {
         klog("[%s] insmod %s: symbol lookup failed: %d", m->id, path, -ret);

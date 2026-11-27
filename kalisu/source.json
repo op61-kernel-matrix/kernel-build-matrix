@@ -4,5 +4,9 @@
   "version_code": 30000,
   "source_repository": "nostasukisumanager/KaliSU",
   "source_branch": "KaliSU",
-  "source_commit": "4dab01f0fc022ec50c6c7f110c6be28d3dca292b"
+  "source_commit": "d1a0836256189898bd4738263e8c64a60e497788",
+  "manager_certificate_size": "0x53b",
+  "manager_certificate_sha256": "d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546",
+  "bridge_abi": 1,
+  "uapi_version": 7
 }

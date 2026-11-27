@@ -74,7 +74,7 @@ static int do_get_info(void __user *arg)
     cmd.flags |= KSU_GET_INFO_FLAG_PR_BUILD;
 #endif
     cmd.features = KSU_FEATURE_MAX;
-    cmd.uapi_version = KERNEL_SU_UAPI_VERSION;
+    cmd.uapi_version = KALISU_UAPI_VERSION;
     ksu_version_spoof_apply_info(&cmd);
 
     if (copy_to_user(arg, &cmd, sizeof(cmd))) {
@@ -115,6 +115,46 @@ static int do_get_info_legacy(void __user *arg)
     }
 
     return 0;
+}
+
+static int do_kalisu_bridge(void __user *arg)
+{
+#ifdef CONFIG_KSU_DISABLE_MANAGER
+    return -EOPNOTSUPP;
+#else
+    struct kalisu_bridge_cmd request;
+    struct kalisu_bridge_cmd response = {
+        .magic = KALISU_BRIDGE_MAGIC,
+        .abi_version = KALISU_BRIDGE_ABI_VERSION,
+        .struct_size = sizeof(struct kalisu_bridge_cmd),
+        .uapi_abi_version = KALISU_UAPI_ABI_VERSION,
+        .uapi_version = KALISU_UAPI_VERSION,
+        .core_version = KERNEL_SU_VERSION,
+        .flags = KALISU_BRIDGE_FLAG_AUTHENTICATED | KALISU_BRIDGE_FLAG_CERT_REGISTRY,
+        .manager_appid = current_uid().val % KSU_PER_USER_RANGE,
+    };
+
+    if (copy_from_user(&request, arg, sizeof(request)))
+        return -EFAULT;
+    if (request.struct_size != sizeof(struct kalisu_bridge_cmd))
+        return -EMSGSIZE;
+    if (request.abi_version != KALISU_BRIDGE_ABI_VERSION)
+        return -EPROTO;
+    if (!request.nonce[0] && !request.nonce[1])
+        return -EINVAL;
+
+    response.nonce[0] = request.nonce[0];
+    response.nonce[1] = request.nonce[1];
+#ifdef MODULE
+    response.flags |= KALISU_BRIDGE_FLAG_LKM;
+#else
+    response.flags |= KALISU_BRIDGE_FLAG_NATIVE;
+#endif
+
+    if (copy_to_user(arg, &response, sizeof(response)))
+        return -EFAULT;
+    return 0;
+#endif
 }
 
 static int do_report_event(void __user *arg)
@@ -713,7 +753,7 @@ out:
 }
 
 // do_set_spoof_cpu was relocated to kernel/extension/cpu_spoof.c.
-// do_set_spoof_version stays here because the KSU_IOCTL_SET_SPOOF_VERSION
+// do_set_spoof_version stays here because the KALISU_IOCTL_SET_SPOOF_VERSION
 // number is kept (see uapi/supercall.h).
 
 static int do_set_spoof_version(void __user *arg)
@@ -834,8 +874,7 @@ static int do_extension(void __user *arg)
         ret = ksu_extension_enumerate((u32)cmd.value, &desc);
         if (ret)
             return ret;
-        if (copy_to_user((void __user *)(uintptr_t)cmd.user_ptr, &desc,
-                         sizeof(desc)))
+        if (copy_to_user((void __user *)(uintptr_t)cmd.user_ptr, &desc, sizeof(desc)))
             return -EFAULT;
 
         cmd.id = desc.id;
@@ -853,8 +892,7 @@ static int do_extension(void __user *arg)
 
     /* op == IO  -> forward the user pointer verbatim */
     if (cmd.op == KSU_EXTENSION_IO)
-        return ksu_extension_ioctl(extension_id, cmd.api_version,
-                                   (void __user *)(uintptr_t)cmd.user_ptr);
+        return ksu_extension_ioctl(extension_id, cmd.api_version, (void __user *)(uintptr_t)cmd.user_ptr);
 
     /* op == WIPE -> call the extension's wipe handler if any */
     if (cmd.op == KSU_EXTENSION_WIPE)
@@ -876,8 +914,7 @@ static int do_extension(void __user *arg)
             u64 value = 0;
             u32 caps = 0;
 
-            (void)ksu_extension_get(extension_id, KSU_EXTENSION_API_VERSION,
-                                    &value, &caps);
+            (void)ksu_extension_get(extension_id, KSU_EXTENSION_API_VERSION, &value, &caps);
             cmd.supported = extension_reply_caps(extension_id, caps);
             cmd.value = value;
             cmd.api_version = KSU_EXTENSION_API_VERSION;
@@ -909,177 +946,183 @@ static int do_extension(void __user *arg)
 // clang-format off
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
     {
-        .cmd = KSU_IOCTL_GRANT_ROOT,
+        .cmd = KALISU_IOCTL_GRANT_ROOT,
         .name = "GRANT_ROOT",
         .handler = do_grant_root,
         .perm_check = allowed_for_su
     },
     {
-        .cmd = KSU_IOCTL_GET_INFO,
+        .cmd = KALISU_IOCTL_GET_INFO,
         .name = "GET_INFO",
         .handler = do_get_info,
         .perm_check = always_allow
     },
     {
-        .cmd = KSU_IOCTL_GET_INFO_LEGACY,
+        .cmd = KALISU_IOCTL_GET_INFO_LEGACY,
         .name = "GET_INFO_LEGACY",
         .handler = do_get_info_legacy,
         .perm_check = always_allow
     },
     {
-        .cmd = KSU_IOCTL_REPORT_EVENT,
+        .cmd = KALISU_IOCTL_REPORT_EVENT,
         .name = "REPORT_EVENT",
         .handler = do_report_event,
         .perm_check = only_root
     },
     {
-        .cmd = KSU_IOCTL_SET_SEPOLICY,
+        .cmd = KALISU_IOCTL_SET_SEPOLICY,
         .name = "SET_SEPOLICY",
         .handler = do_set_sepolicy,
         .perm_check = only_root
     },
     {
-        .cmd = KSU_IOCTL_CHECK_SAFEMODE,
+        .cmd = KALISU_IOCTL_CHECK_SAFEMODE,
         .name = "CHECK_SAFEMODE",
         .handler = do_check_safemode,
         .perm_check = always_allow
     },
     {
-        .cmd = KSU_IOCTL_GET_ALLOW_LIST,
+        .cmd = KALISU_IOCTL_GET_ALLOW_LIST,
         .name = "GET_ALLOW_LIST",
         .handler = do_get_allow_list,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_GET_DENY_LIST,
+        .cmd = KALISU_IOCTL_GET_DENY_LIST,
         .name = "GET_DENY_LIST",
         .handler = do_get_deny_list,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_NEW_GET_ALLOW_LIST,
+        .cmd = KALISU_IOCTL_NEW_GET_ALLOW_LIST,
         .name = "NEW_GET_ALLOW_LIST",
         .handler = do_new_get_allow_list,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_NEW_GET_DENY_LIST,
+        .cmd = KALISU_IOCTL_NEW_GET_DENY_LIST,
         .name = "NEW_GET_DENY_LIST",
         .handler = do_new_get_deny_list,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_UID_GRANTED_ROOT,
+        .cmd = KALISU_IOCTL_UID_GRANTED_ROOT,
         .name = "UID_GRANTED_ROOT",
         .handler = do_uid_granted_root,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_UID_SHOULD_UMOUNT,
+        .cmd = KALISU_IOCTL_UID_SHOULD_UMOUNT,
         .name = "UID_SHOULD_UMOUNT",
         .handler = do_uid_should_umount,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_GET_MANAGER_APPID,
+        .cmd = KALISU_IOCTL_GET_MANAGER_APPID,
         .name = "GET_MANAGER_APPID",
         .handler = do_get_manager_appid,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_GET_APP_PROFILE,
+        .cmd = KALISU_IOCTL_GET_APP_PROFILE,
         .name = "GET_APP_PROFILE",
         .handler = do_get_app_profile,
         .perm_check = only_manager
     },
     {
-        .cmd = KSU_IOCTL_SET_APP_PROFILE,
+        .cmd = KALISU_IOCTL_SET_APP_PROFILE,
         .name = "SET_APP_PROFILE",
         .handler = do_set_app_profile,
         .perm_check = only_manager
     },
     {
-        .cmd = KSU_IOCTL_GET_FEATURE,
+        .cmd = KALISU_IOCTL_GET_FEATURE,
         .name = "GET_FEATURE",
         .handler = do_get_feature,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_SET_FEATURE,
+        .cmd = KALISU_IOCTL_SET_FEATURE,
         .name = "SET_FEATURE",
         .handler = do_set_feature,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_GET_WRAPPER_FD,
+        .cmd = KALISU_IOCTL_GET_WRAPPER_FD,
         .name = "GET_WRAPPER_FD",
         .handler = do_get_wrapper_fd,
         .perm_check = manager_or_root,
         .allow_su_session = true
     },
     {
-        .cmd = KSU_IOCTL_MANAGE_MARK,
+        .cmd = KALISU_IOCTL_MANAGE_MARK,
         .name = "MANAGE_MARK",
         .handler = do_manage_mark,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_NUKE_EXT4_SYSFS,
+        .cmd = KALISU_IOCTL_NUKE_EXT4_SYSFS,
         .name = "NUKE_EXT4_SYSFS",
         .handler = do_nuke_ext4_sysfs,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_ADD_TRY_UMOUNT,
+        .cmd = KALISU_IOCTL_ADD_TRY_UMOUNT,
         .name = "ADD_TRY_UMOUNT",
         .handler = add_try_umount,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_SET_INIT_PGRP,
+        .cmd = KALISU_IOCTL_SET_INIT_PGRP,
         .name = "SET_INIT_PGRP",
         .handler = do_set_init_pgrp,
         .perm_check = only_root
     },
     {
-        .cmd = KSU_IOCTL_GET_SULOG_FD,
+        .cmd = KALISU_IOCTL_GET_SULOG_FD,
         .name = "GET_SULOG_FD",
         .handler = do_get_sulog_fd,
         .perm_check = only_root
     },
     {
-        .cmd = KSU_IOCTL_DISABLE_ESCAPE_TO_ROOT,
+        .cmd = KALISU_IOCTL_DISABLE_ESCAPE_TO_ROOT,
         .name = "DISABLE_ESCAPE_TO_ROOT",
         .handler = do_disable_escape_to_root,
         .perm_check = only_root,
         .allow_su_session = true
     },
     {
-        .cmd = KSU_IOCTL_LOOKUP_SYMBOLS,
+        .cmd = KALISU_IOCTL_LOOKUP_SYMBOLS,
         .name = "LOOKUP_SYMBOLS",
         .handler = do_lookup_symbols,
         .perm_check = only_root
     },
     {
-        .cmd = KSU_IOCTL_SET_SPOOF_VERSION,
+        .cmd = KALISU_IOCTL_BRIDGE,
+        .name = "KALISU_BRIDGE",
+        .handler = do_kalisu_bridge,
+        .perm_check = only_manager
+    },
+    {
+        .cmd = KALISU_IOCTL_SET_SPOOF_VERSION,
         .name = "SET_SPOOF_VERSION",
         .handler = do_set_spoof_version,
         .perm_check = only_root
     },
     {
-        .cmd = KSU_IOCTL_GET_FULL_VERSION,
+        .cmd = KALISU_IOCTL_GET_FULL_VERSION,
         .name = "GET_FULL_VERSION",
         .handler = do_get_full_version,
         .perm_check = always_allow
     },
     {
-        .cmd = KSU_IOCTL_HOOK_TYPE,
+        .cmd = KALISU_IOCTL_HOOK_TYPE,
         .name = "GET_HOOK_TYPE",
         .handler = do_get_hook_type,
         .perm_check = manager_or_root
     },
     {
-        .cmd = KSU_IOCTL_EXTENSION,
+        .cmd = KALISU_IOCTL_EXTENSION,
         .name = "EXTENSION",
         .handler = do_extension,
         .perm_check = manager_or_root

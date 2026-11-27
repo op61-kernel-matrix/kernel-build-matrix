@@ -13,15 +13,14 @@
 /*
  * An extension is a KaliSU subsystem richer than a single bit. Each
  * registers a handler; the kernel keeps a table indexed by extension_id,
- * dispatched through KSU_IOCTL_EXTENSION.
+ * dispatched through KALISU_IOCTL_EXTENSION.
  *
  * Flavours:
  *   - value      : sticky enable bit via get/set ops. DYNAMIC_MANAGER.
  *                  KSU_EXTENSION_SET calls ops->set; KSU_EXTENSION_GET
  *                  calls ops->get.
- *   - io + get   : exposes a runtime GET (e.g. CONFIG_KPM presence) but
- *                  has no runtime SET. KSU_EXTENSION_SET returns
- *                  -EOPNOTSUPP. KPM.
+ *   - io + get   : exposes a runtime GET but has no runtime SET.
+ *                  KSU_EXTENSION_SET returns -EOPNOTSUPP.
  *   - io only    : no sticky bit at all; io_handler forwards raw user
  *                  payloads. CPU_SPOOF, UMOUNT_PATHS, VERSION_SPOOF.
  *
@@ -186,7 +185,7 @@ void ksu_extension_register_all(void);
  *           0 octal). The value's meaning is per-extension:
  *     - value-flavoured handlers (DYNAMIC_MANAGER) treat <value> as
  *       the sticky bit (0 or 1) and replay it through ops->set().
- *     - io-flavoured handlers (KPM) may pack a (sub-op, arg) tuple
+ *     - io-flavoured handlers may pack a (sub-op, arg) tuple
  *       into the u64 using the KSU_EXTENSION_FORCE_* macros below.
  *
  * # Replay order
@@ -214,7 +213,7 @@ void ksu_extension_register_all(void);
  * instead of hand-rolling the bit shifts:
  *
  *   u64 v = KSU_EXTENSION_FORCE_PACK(7, 0x42);
- *   if (KSU_EXTENSION_FORCE_OP(v) != SUKISU_KPM_VERSION) ...;
+ *   if (KSU_EXTENSION_FORCE_OP(v) != expected_op) ...;
  *   do_thing_with(KSU_EXTENSION_FORCE_ARG(v));
  *
  * # Stability

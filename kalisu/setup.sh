@@ -39,7 +39,7 @@ perform_cleanup() {
 # Sets up or update KernelSU environment
 setup_kernelsu() {
     echo "[+] Setting up KernelSU..."
-    test -d "$GKI_ROOT/KernelSU" || git clone --branch KaliSU https://github.com/nostasukisumanager/KaliSU.git KernelSU && echo "[+] KaliSU repository cloned."
+    test -d "$GKI_ROOT/KernelSU" || git clone --branch KaliSU https://github.com/nostasukisumanager/KaliSU-Manager-Manager.git KernelSU && echo "[+] KaliSU repository cloned."
     cd "$GKI_ROOT/KernelSU"
     git stash && echo "[-] Stashed current changes."
     if [ "$(git status | grep -Po 'v\d+(\.\d+)*' | head -n1)" ]; then

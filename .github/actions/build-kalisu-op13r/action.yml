@@ -1,5 +1,5 @@
-name: 'Build native KaliSU OP13R boot baseline'
-description: 'Build a minimal native KaliSU kernel for the OnePlus 13R before adding SuSFS or NoMount'
+name: 'Build full KaliSU OP13R GKI 2.0 canary'
+description: 'Build native KaliSU, KaliSU Bridge and SuSFS 2.4.0 for the OnePlus 13R'
 inputs:
   op_config_json:
     description: 'JSON string containing full device config'
@@ -1075,24 +1075,26 @@ runs:
         echo "NostalgiKSU source: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
-    - name: Add native KaliSU 3.0.0 source
+    - name: Add current KaliSU 3.0.0 source and Bridge
       shell: bash
       if: ${{ inputs.ksu_type == 'KaliSU' }}
       run: |
         set -euo pipefail
-        echo "::group::Add native KaliSU 3.0.0 source"
+        echo "::group::Add current KaliSU 3.0.0 source and Bridge"
         cd "$KERNEL_PLATFORM_FOLDER"
         rm -rf KernelSU
 
         jq -e '.product == "KaliSU" and
                .version == "3.0.0" and
                .version_code == 30000 and
-               .source_commit == "4dab01f0fc022ec50c6c7f110c6be28d3dca292b"' \
+               .source_commit == "d1a0836256189898bd4738263e8c64a60e497788" and
+               .manager_certificate_size == "0x53b" and
+               .manager_certificate_sha256 == "d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546" and
+               .bridge_abi == 1 and .uapi_version == 7' \
           "$GITHUB_WORKSPACE/action-source/kalisu/source.json" >/dev/null
 
-        # Use the real KaliSU tree.  The previous experiment substituted a
-        # KernelSU-Next tree and changed its visible identity; this baseline
-        # deliberately does not do that.
+        # Use the real KaliSU tree and its owned manager/kernel Bridge.  Never
+        # substitute a foreign root engine or accept a foreign manager cert.
         cp -a "$GITHUB_WORKSPACE/action-source/kalisu" KernelSU
         # GitHub's source archive represented include/uapi as a plain file
         # containing the original symlink target.  Recreate the link for this
@@ -1104,12 +1106,17 @@ runs:
         test -f KernelSU/Kconfig
         test -f KernelSU/supercall/dispatch.c
         test -f KernelSU/manager/manager_identity.h
+        test -f KernelSU/bridge/kalisu_bridge.c
         test -L KernelSU/include/uapi
         test -f KernelSU/include/uapi/supercall.h
         grep -qF 'REPO_NAME   := KaliSU' KernelSU/Kbuild
         grep -qF 'VERSION_BASE    := 30000' KernelSU/Kbuild
-        grep -qF 'KSU_PACKAGE_NAME ?= io.gitlab.kalisu.manager' KernelSU/Kbuild
-        KSU_COMMIT_SHA=4dab01f0fc022ec50c6c7f110c6be28d3dca292b
+        grep -qF 'KSU_PACKAGE_NAME ?= com.nostalgicmultiverse.kalisu.manager' KernelSU/Kbuild
+        grep -qF 'KSU_EXPECTED_SIZE ?= 0x53b' KernelSU/Kbuild
+        grep -qF 'KSU_EXPECTED_HASH ?= d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' KernelSU/Kbuild
+        grep -qF 'kalisu-objs += bridge/kalisu_bridge.o' KernelSU/Kbuild
+        grep -qF 'KALISU_IOCTL_BRIDGE' KernelSU/supercall/dispatch.c
+        KSU_COMMIT_SHA=d1a0836256189898bd4738263e8c64a60e497788
 
         DRIVER_DIR="$COMMON_KERNEL_FOLDER/drivers"
         ln -sfn "$(realpath --relative-to="$DRIVER_DIR" "$KERNEL_PLATFORM_FOLDER/KernelSU")" "$DRIVER_DIR/kernelsu"
@@ -1125,9 +1132,9 @@ runs:
 
         echo "NEED_HOOKS=false" >> "$GITHUB_ENV"
         echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> "$GITHUB_ENV"
-        echo "KSUVER=30000-native" >> "$GITHUB_ENV"
+        echo "KSUVER=30000-bridge1" >> "$GITHUB_ENV"
         echo "KaliSU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
-        echo "30000-native" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
+        echo "30000-bridge1" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
         echo "KaliSU native source: $KSU_COMMIT_SHA"
         echo "::endgroup::"
 
@@ -3044,11 +3051,14 @@ runs:
           exit 1
         fi
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          grep -qF -- '-- KaliSU version: 30000 [v3.0.0-4dab01f0@KaliSU]' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Reviewed KaliSU version/tag line missing"; exit 1; }
-          grep -qF -- '-- KaliSU Manager signature size: 0x599' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU Manager certificate size missing from compiled Kbuild contract"; exit 1; }
-          grep -qF -- '-- KaliSU Manager signature hash: b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU Manager certificate hash missing from compiled Kbuild contract"; exit 1; }
-          grep -qF 'v3.0.0-4dab01f0@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
-          grep -qF 'io.gitlab.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU Manager package identity missing"; exit 1; }
+          grep -qF -- '-- KaliSU version: 30000 [v3.0.0-d1a08362@KaliSU]' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Reviewed KaliSU version/tag line missing"; exit 1; }
+          grep -qF -- '-- KaliSU Manager signature size: 0x53b' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Current KaliSU Manager certificate size missing from compiled Kbuild contract"; exit 1; }
+          grep -qF -- '-- KaliSU Manager signature hash: d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Current KaliSU Manager certificate hash missing from compiled Kbuild contract"; exit 1; }
+          grep -qF 'v3.0.0-d1a08362@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
+          grep -qF 'com.nostalgicmultiverse.kalisu.manager' "$IMAGE_STRINGS" || { echo "::error::KaliSU canonical Manager package identity missing"; exit 1; }
+          grep -qF 'd8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546' "$IMAGE_STRINGS" || { echo "::error::KaliSU randomized-package certificate identity missing"; exit 1; }
+          grep -qF 'KaliSU Bridge v%u diagnostic endpoint ready' "$IMAGE_STRINGS" || { echo "::error::KaliSU Bridge diagnostic endpoint missing"; exit 1; }
+          grep -qF 'KALISU_BRIDGE' "$IMAGE_STRINGS" || { echo "::error::Authenticated KaliSU Bridge command missing"; exit 1; }
           # Whole-Image inspection is reserved for competing functional root
           # or built-in Zygisk identities. Contributor names and generic words
           # can legitimately survive in imported source metadata, so their
@@ -3382,8 +3392,9 @@ runs:
             exit 1
           fi
         elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          grep -Fq 'ui_print "[KaliSU NATIVE BOOT BASELINE]"' anykernel.sh
-          grep -Fq 'ui_print "KaliSU"' anykernel.sh
+          grep -Fq 'ui_print "[KaliSU FULL GKI 2.0 CANARY]"' anykernel.sh
+          grep -Fq 'ui_print "KaliSU 3.0.0 + KaliSU Bridge ABI 1"' anykernel.sh
+          grep -Fq 'ui_print "SuSFS 2.4.0 full nine-capability integration"' anykernel.sh
           grep -Fq 'ui_print "Credits: OnePlus/Oppo (OOS-COS), KaliSU contributors & AK3 Team"' anykernel.sh
           if grep -qiE 'nostalg|OP-WILD|WildKSU|wild[[:space:]_-]*kernels?|wildjames|weedman|fatalcoder|fatal[[:space:]_-]*coder|huangdihd|hunagdihd|bakasu|finasu|sukisu|resukisu|re[[:space:]_-]*sukisu|nova' anykernel.sh; then
             echo "::error::Foreign installer branding survived the KaliSU footer rewrite"
@@ -3396,9 +3407,10 @@ runs:
         # they resolved to the same full kernel version.
         ZIP_MODEL="$OP_MODEL"
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          test "${OP_SUSFS}" = "false"
+          test "${OP_SUSFS}" = "true"
           test "${{ inputs.use_nomount }}" = "false"
-          ZIP_NAME="KaliSU-OP13R-A16-android14-6.1.157-native-boot-baseline.zip"
+          test "${SUSVER:-}" = "v2.4.0"
+          ZIP_NAME="KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0.zip"
         elif [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
           test -n "${SUSVER:-}"
           PROFILE_SUFFIX=''
@@ -3431,7 +3443,9 @@ runs:
         elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           unzip -t "$ARTIFACTS_FOLDER/$ZIP_NAME" >/dev/null
           unzip -l "$ARTIFACTS_FOLDER/$ZIP_NAME" | grep -qE '[[:space:]]Image$'
-          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq '[KaliSU NATIVE BOOT BASELINE]'
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq '[KaliSU FULL GKI 2.0 CANARY]'
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq 'KaliSU 3.0.0 + KaliSU Bridge ABI 1'
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq 'SuSFS 2.4.0 full nine-capability integration'
         fi
 
         find "$ARTIFACTS_FOLDER" -maxdepth 1 -type f ! -name "$ZIP_NAME" -delete
