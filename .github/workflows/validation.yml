@@ -100,7 +100,7 @@ jobs:
           local_build: true
 
       - name: Restore warm compiler cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /tmp/ccache
           key: plain-op13r-6.1.157-r487747c-${{ github.run_id }}
@@ -183,6 +183,12 @@ jobs:
           echo "image_sha256=$image_sha256" >> "$GITHUB_OUTPUT"
           ccache --show-stats
 
+      - name: Save compiler cache immediately after build
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/ccache
+          key: plain-op13r-6.1.157-r487747c-${{ github.run_id }}
+
       - name: Static audit plain baseline
         id: audit
         shell: bash
@@ -233,6 +239,7 @@ jobs:
           path.write_text("\n".join(lines) + "\n")
           PY
 
+          sed -i 's/^do.check_boot_version=.*/do.check_boot_version=1/' "$ak3/anykernel.sh"
           grep -Fq 'block=boot' "$ak3/anykernel.sh"
           grep -Fq 'is_slot_device=auto' "$ak3/anykernel.sh"
           grep -Fq 'do.check_boot_version=1' "$ak3/anykernel.sh"
