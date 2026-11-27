@@ -92,7 +92,9 @@ jobs:
           use_nomount: false
           optimize_level: O2
           gaming_profile: false
-          clean: true
+          # Keep ccache enabled so later canary iterations reuse compiled
+          # objects instead of rebuilding the full 6.1.157 tree every time.
+          clean: false
           debug: false
 
       - name: Static audit of native baseline
