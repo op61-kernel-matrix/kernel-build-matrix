@@ -1,5 +1,5 @@
 ui_print " "
-ui_print "[KaliSU FULL GKI 2.0 CANARY]"
+ui_print "[SuSFS-NS · KaliSU FULL GKI 2.0 CANARY]"
 ui_print "KaliSU 3.0.0 + KaliSU Bridge ABI 1"
 ui_print "OP13R CPH2691 / OOS 16.0.10.600"
 ui_print " "

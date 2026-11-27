@@ -2362,10 +2362,10 @@ runs:
         CONFIG_PHY_MTK_TPHY=y
         EOF
         elif [[ "${OP_BRANCH,,}${OP_SOC,,}" == *"sm"* ]]; then
-            echo "Detected Qualcomm (sm). Restoring the boot-proven QCOM PHY configuration..."
+            echo "Detected Qualcomm (sm). Adding the device USB controller configuration..."
             cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
         CONFIG_USB_DWC3_QCOM=y
-        CONFIG_PHY_QCOM_QMP=y
+        # CONFIG_PHY_QCOM_QMP is not set
         CONFIG_PHY_QCOM_USB_HS=y
         EOF
         else
@@ -2603,6 +2603,28 @@ runs:
 
         CONFIG_STRING="${OPTIONS[*]}"
         echo "CONFIG_FAKE_DISABLE=${CONFIG_STRING}" >> $GITHUB_ENV
+
+    - name: Apply OP13R normal-boot vendor module guard
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$COMMON_KERNEL_FOLDER"
+
+        patch --batch --forward -p1 < \
+          "$GITHUB_WORKSPACE/action-source/.github/patches/op13r-vendor-module-guard-6.1.patch"
+
+        # This is the exact list embedded in the supplied, physically booting
+        # OP13R A16 6.1.157 reference Image.  Keep it in the kernel so boot does
+        # not depend on a separately patched init_boot or a command-line value.
+        OP13R_VENDOR_GUARD="${OP_BLACKLIST_MODULES},oplus_network_tuning,oplus_networks_tuning"
+        printf 'CONFIG_DEBLOAT_VENDOR_MODULES="%s"\n' "$OP13R_VENDOR_GUARD" >> \
+          "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig"
+        echo "OP13R_VENDOR_GUARD=$OP13R_VENDOR_GUARD" >> "$GITHUB_ENV"
+
+        grep -qF 'config DEBLOAT_VENDOR_MODULES' arch/arm64/Kconfig
+        grep -qF 'Vendor module guard active.' kernel/module/main.c
+        grep -qF "CONFIG_DEBLOAT_VENDOR_MODULES=\"$OP13R_VENDOR_GUARD\"" \
+          arch/arm64/configs/gki_defconfig
 
     - name: Build Kernel
       id: build_kernel_step
@@ -3079,18 +3101,11 @@ runs:
           exit 1
         fi
 
-        # The physically booting huangdihd OP13R 6.1.157 reference contains
-        # these built-ins. The rejected KaliSU v1 accidentally dropped them,
-        # including the Qualcomm QMP PHY family, and stalled late in boot.
-        # Fail closed so a release can never silently regress that baseline.
+        # Match the platform-facing configuration of the supplied physically
+        # booting OP13R A16 6.1.157 reference.  The two rejected hybrids did
+        # not embed its normal-boot vendor-module guard.
         REQUIRED_BOOT_REFERENCE_CONFIGS=(
           CONFIG_MACVLAN
-          CONFIG_PHY_QCOM_QMP
-          CONFIG_PHY_QCOM_QMP_COMBO
-          CONFIG_PHY_QCOM_QMP_PCIE
-          CONFIG_PHY_QCOM_QMP_PCIE_8996
-          CONFIG_PHY_QCOM_QMP_UFS
-          CONFIG_PHY_QCOM_QMP_USB
         )
         for capability in "${REQUIRED_BOOT_REFERENCE_CONFIGS[@]}"; do
           if ! grep -qx "${capability}=y" "$FINAL_CONFIG"; then
@@ -3104,6 +3119,26 @@ runs:
           rm -f "$IMAGE_STRINGS"
           exit 1
         fi
+        if ! grep -qx '# CONFIG_PHY_QCOM_QMP is not set' "$FINAL_CONFIG"; then
+          echo "::error::OP13R reference config unexpectedly enabled CONFIG_PHY_QCOM_QMP"
+          rm -f "$IMAGE_STRINGS"
+          exit 1
+        fi
+        if ! grep -qx "CONFIG_DEBLOAT_VENDOR_MODULES=\"${OP13R_VENDOR_GUARD}\"" "$FINAL_CONFIG"; then
+          echo "::error::Exact OP13R normal-boot vendor module guard is missing"
+          rm -f "$IMAGE_STRINGS"
+          exit 1
+        fi
+        grep -qF 'Vendor module guard active.' "$IMAGE_STRINGS" || {
+          echo "::error::Normal-boot vendor module guard code is absent from Image"
+          rm -f "$IMAGE_STRINGS"
+          exit 1
+        }
+        grep -qF "$OP13R_VENDOR_GUARD" "$IMAGE_STRINGS" || {
+          echo "::error::Exact OP13R vendor module list is absent from Image"
+          rm -f "$IMAGE_STRINGS"
+          exit 1
+        }
 
         SECURITY_MARKERS=(CONFIG_SECCOMP CONFIG_SECCOMP_FILTER)
         if [ "${OP_SUSFS:-false}" = "true" ]; then
@@ -3361,7 +3396,7 @@ runs:
             exit 1
           fi
         elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          grep -Fq 'ui_print "[KaliSU FULL GKI 2.0 CANARY]"' anykernel.sh
+          grep -Fq 'ui_print "[SuSFS-NS · KaliSU FULL GKI 2.0 CANARY]"' anykernel.sh
           grep -Fq 'ui_print "KaliSU 3.0.0 + KaliSU Bridge ABI 1"' anykernel.sh
           grep -Fq 'ui_print "SuSFS 2.4.0 full nine-capability integration"' anykernel.sh
           grep -Fq 'ui_print "Credits: OnePlus/Oppo (OOS-COS), KaliSU contributors & AK3 Team"' anykernel.sh
@@ -3379,7 +3414,7 @@ runs:
           test "${OP_SUSFS}" = "true"
           test "${{ inputs.use_nomount }}" = "false"
           test "${SUSVER:-}" = "v2.4.0"
-          ZIP_NAME="KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0_RefCfg-v2.zip"
+          ZIP_NAME="SuSFS-NS_OP13R_OOS16_android14-6.1.157_KaliSU-30000_Bridge1_SuSFS-2.4.0_VendorGuard-v3.zip"
         elif [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
           test -n "${SUSVER:-}"
           PROFILE_SUFFIX=''
@@ -3412,9 +3447,21 @@ runs:
         elif [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
           unzip -t "$ARTIFACTS_FOLDER/$ZIP_NAME" >/dev/null
           unzip -l "$ARTIFACTS_FOLDER/$ZIP_NAME" | grep -qE '[[:space:]]Image$'
-          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq '[KaliSU FULL GKI 2.0 CANARY]'
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq '[SuSFS-NS · KaliSU FULL GKI 2.0 CANARY]'
           unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq 'KaliSU 3.0.0 + KaliSU Bridge ABI 1'
           unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh | grep -Fq 'SuSFS 2.4.0 full nine-capability integration'
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" banner | grep -Fxq 'SuSFS-NS'
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" banner | grep -Fxq 'KaliSU 3.0.0 · BRIDGE ABI 1'
+
+          forbidden_branding='fatalcoder|fatal[[:space:]_-]*coder|wildkernels|wild[[:space:]_-]*kernels|wildjames|weedman|rifsxd|kernelsu-next|kernel[[:space:]_-]*su[[:space:]_-]*next|op-wild|huangdihd|hunagdihd|bakasu|resukisu|re[[:space:]_-]*sukisu|resusfs'
+          unzip -Z1 "$ARTIFACTS_FOLDER/$ZIP_NAME" > /tmp/kalisu-archive-paths
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" anykernel.sh > /tmp/kalisu-visible-installer
+          unzip -p "$ARTIFACTS_FOLDER/$ZIP_NAME" banner > /tmp/kalisu-visible-banner
+          if printf '%s\n' "$ZIP_NAME" | grep -qiE "$forbidden_branding" ||
+             grep -qiE "$forbidden_branding" /tmp/kalisu-archive-paths /tmp/kalisu-visible-installer /tmp/kalisu-visible-banner; then
+            echo "::error::Foreign branding reached the KaliSU release artifact"
+            exit 1
+          fi
         fi
 
         find "$ARTIFACTS_FOLDER" -maxdepth 1 -type f ! -name "$ZIP_NAME" -delete
