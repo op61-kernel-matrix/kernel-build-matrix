@@ -26,8 +26,8 @@ env:
   KALISU_CERT_SIZE: "0x53b"
   KALISU_CERT_SHA256: d8ed664c1c83cf2a49ee45f3c1e6cecdc7ecc2697fcb877db03ecd70713aa546
   SUSFS_COMMIT: 69b8e734920b8f9ed885ab8d112969719698e242
-  EXPECTED_ZIP: KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0.zip
-  RELEASE_TAG: kalisu-op13r-full-gki2-v1
+  EXPECTED_ZIP: KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0_RefCfg-v2.zip
+  RELEASE_TAG: kalisu-op13r-full-gki2-v2
 
 jobs:
   build:
@@ -242,22 +242,26 @@ jobs:
           - Manager authorization: exact package plus exact release certificate
           - SuSFS: v2.4.0 at $SUSFS_COMMIT, full nine-capability integration
           - Baka manager package/certificate: rejected by static audit
+          - Boot-reference config restored: QCOM QMP PHY family and MACVLAN (MACVTAP remains disabled, matching the booting image)
+          - AnyKernel3: exact huangdihd booting source commit ea531d03965f702a45e1b0ab7c5db8d196c975c3; functional flash path unchanged
           - NoMount: excluded
           - clean=false with reusable ccache
           - Image SHA-256: $IMAGE_SHA256
           - ZIP SHA-256: $ZIP_SHA256
 
-          The earlier native baseline failed to boot and is not evidence for this
-          candidate. Keep the stock boot image ready for recovery.
+          The earlier native baseline and full-GKI2 v1 both failed to boot. This
+          v2 corrects the concrete config delta found against the booting Baka
+          reference. It remains unbooted until a physical test succeeds. Keep
+          the stock boot image ready for recovery.
           EOF
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release edit "$RELEASE_TAG" --prerelease \
-              --title 'KaliSU OP13R full GKI2 v1 - UNBOOTED' \
+              --title 'KaliSU OP13R full GKI2 v2 reference-config - UNBOOTED' \
               --notes-file "$notes"
           else
             gh release create "$RELEASE_TAG" --prerelease --target "${{ github.sha }}" \
-              --title 'KaliSU OP13R full GKI2 v1 - UNBOOTED' \
+              --title 'KaliSU OP13R full GKI2 v2 reference-config - UNBOOTED' \
               --notes-file "$notes"
           fi
           gh release upload "$RELEASE_TAG" "$ZIP_PATH#$EXPECTED_ZIP" --clobber

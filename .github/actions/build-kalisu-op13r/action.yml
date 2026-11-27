@@ -2362,9 +2362,10 @@ runs:
         CONFIG_PHY_MTK_TPHY=y
         EOF
         elif [[ "${OP_BRANCH,,}${OP_SOC,,}" == *"sm"* ]]; then
-            echo "Detected Qualcomm (sm). Keeping the device-tree-selected PHY configuration..."
+            echo "Detected Qualcomm (sm). Restoring the boot-proven QCOM PHY configuration..."
             cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
         CONFIG_USB_DWC3_QCOM=y
+        CONFIG_PHY_QCOM_QMP=y
         CONFIG_PHY_QCOM_USB_HS=y
         EOF
         else
@@ -2462,9 +2463,11 @@ runs:
         CONFIG_PID_NS=y
         CONFIG_POSIX_MQUEUE=y
         CONFIG_NETFILTER_XT_TARGET_REJECT=y
+        CONFIG_IP6_NF_TARGET_REJECT=y
         CONFIG_NETFILTER_XT_TARGET_LOG=y
         CONFIG_NETFILTER_XT_MATCH_RECENT=y
         CONFIG_USER_NS=y
+        CONFIG_MACVLAN=y
         EOF
 
         patch -p1 < "$KERNEL_PATCHES_FOLDER/common/droidspaces/0001-Guard-USER_NS-for-non-root-users.patch"
@@ -3076,6 +3079,32 @@ runs:
           exit 1
         fi
 
+        # The physically booting huangdihd OP13R 6.1.157 reference contains
+        # these built-ins. The rejected KaliSU v1 accidentally dropped them,
+        # including the Qualcomm QMP PHY family, and stalled late in boot.
+        # Fail closed so a release can never silently regress that baseline.
+        REQUIRED_BOOT_REFERENCE_CONFIGS=(
+          CONFIG_MACVLAN
+          CONFIG_PHY_QCOM_QMP
+          CONFIG_PHY_QCOM_QMP_COMBO
+          CONFIG_PHY_QCOM_QMP_PCIE
+          CONFIG_PHY_QCOM_QMP_PCIE_8996
+          CONFIG_PHY_QCOM_QMP_UFS
+          CONFIG_PHY_QCOM_QMP_USB
+        )
+        for capability in "${REQUIRED_BOOT_REFERENCE_CONFIGS[@]}"; do
+          if ! grep -qx "${capability}=y" "$FINAL_CONFIG"; then
+            echo "::error::Boot-reference config is missing ${capability}=y"
+            rm -f "$IMAGE_STRINGS"
+            exit 1
+          fi
+        done
+        if ! grep -qx '# CONFIG_MACVTAP is not set' "$FINAL_CONFIG"; then
+          echo "::error::Boot-reference config unexpectedly changed CONFIG_MACVTAP"
+          rm -f "$IMAGE_STRINGS"
+          exit 1
+        fi
+
         SECURITY_MARKERS=(CONFIG_SECCOMP CONFIG_SECCOMP_FILTER)
         if [ "${OP_SUSFS:-false}" = "true" ]; then
           # SuSFS capability gates apply only to a SuSFS build.  The native
@@ -3274,34 +3303,9 @@ runs:
         else:
             raise SystemExit("Known AnyKernel footer marker was not found")
 
-        # Match the proven OP13R pilot installer output. Fatal's AK3 base calls
-        # this "Wild Kernels Supported"; NOSTALGIC-AK3 must show the neutral
-        # OKI capability result used by the final pilot.
-        lines = [
-            line.replace("Wild Kernels Supported:", "OKI Kernel Supported:")
-            for line in lines
-        ]
-
-        # ksud may launch update-binary with its own AKHOME. Derive all AK3
-        # paths from the directory that update-binary extracted and entered.
-        core_import = ". tools/ak3-core.sh"
-        try:
-            core_index = lines.index(core_import)
-        except ValueError:
-            raise SystemExit("AnyKernel core import was not found")
-        lines[core_index:core_index] = [
-            'AKHOME="$(pwd -P)"',
-            'export AKHOME',
-        ]
-
-        # no_magisk_check=1 skips detection, so initialize the numeric value
-        # still consumed by the inherited AK3 flash path.
-        try:
-            split_index = lines.index("split_boot")
-        except ValueError:
-            raise SystemExit("split_boot call was not found")
-        lines.insert(split_index, "magisk_patched=0")
-
+        # Do not alter the functional installer path. This AnyKernel3 commit
+        # matches the known-booting huangdihd archive byte-for-byte before the
+        # harmless presentation-only string/footer changes above.
         path.write_text("\n".join(lines) + "\n")
         PY
 
@@ -3310,33 +3314,6 @@ runs:
         if [ "$OP_MODEL" != "OP13r-6.1.141" ]; then
           sed -i "s/NOSTALGIC Kernel Lab for OnePlus 13R/NOSTALGIC Kernel Lab for ${OP_MODEL}/" anykernel.sh
         fi
-
-        # Do not continue after a broken working directory. Older AK3 cores can
-        # otherwise print Done after repacking from the wrong directory.
-        python3 - <<'PY'
-        from pathlib import Path
-
-        path = Path("tools/ak3-core.sh")
-        text = path.read_text()
-        text = text.replace(
-            "  mkdir -p $SPLITIMG;\n  cd $SPLITIMG;",
-            '  if [ ! -d "$SPLITIMG" ]; then\n'
-            '    mkdir "$SPLITIMG" || abort "Unable to create AnyKernel split directory. Aborting...";\n'
-            '  fi;\n'
-            '  cd "$SPLITIMG" || abort "Unable to enter AnyKernel split directory. Aborting...";',
-        )
-        text = text.replace(
-            "  cd $SPLITIMG;",
-            '  cd "$SPLITIMG" || abort "Unable to enter AnyKernel split directory. Aborting...";',
-        )
-        text = text.replace(
-            "  cd $AKHOME;",
-            '  cd "$AKHOME" || abort "Unable to enter AnyKernel working directory. Aborting...";',
-        )
-        path.write_text(text)
-        PY
-
-        sed -i 's/do.check_boot_version=.*/do.check_boot_version=1/' anykernel.sh
 
         if [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
           cp "$GITHUB_ACTION_PATH/assets/nostalgiksu-banner" banner
@@ -3402,7 +3379,7 @@ runs:
           test "${OP_SUSFS}" = "true"
           test "${{ inputs.use_nomount }}" = "false"
           test "${SUSVER:-}" = "v2.4.0"
-          ZIP_NAME="KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0.zip"
+          ZIP_NAME="KaliSU-AK3_OP13r_OOS16_android14-6.1.157_30000_Bridge1_SuSFS_v2.4.0_RefCfg-v2.zip"
         elif [ "${{ inputs.ksu_type }}" = "NostalgiKSU" ]; then
           test -n "${SUSVER:-}"
           PROFILE_SUFFIX=''
