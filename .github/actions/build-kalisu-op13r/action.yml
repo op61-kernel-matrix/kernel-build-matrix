@@ -3044,8 +3044,7 @@ runs:
           exit 1
         fi
         if [ "${{ inputs.ksu_type }}" = "KaliSU" ]; then
-          grep -qF -- '-- KaliSU version: 30000' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU 30000 build version missing"; exit 1; }
-          grep -qF -- '-- KaliSU tag: v3.0.0-4dab01f0@KaliSU' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Reviewed KaliSU build tag missing"; exit 1; }
+          grep -qF -- '-- KaliSU version: 30000 [v3.0.0-4dab01f0@KaliSU]' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::Reviewed KaliSU version/tag line missing"; exit 1; }
           grep -qF -- '-- KaliSU Manager signature size: 0x599' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU Manager certificate size missing from compiled Kbuild contract"; exit 1; }
           grep -qF -- '-- KaliSU Manager signature hash: b80405c56008fd3dec3127ac95c41d8349778b2e1027d93caeb5e6ed36f905dd' "$COMMON_KERNEL_FOLDER/build.log" || { echo "::error::KaliSU Manager certificate hash missing from compiled Kbuild contract"; exit 1; }
           grep -qF 'v3.0.0-4dab01f0@KaliSU' "$IMAGE_STRINGS" || { echo "::error::Reviewed KaliSU source marker missing"; exit 1; }
@@ -3075,29 +3074,32 @@ runs:
           exit 1
         fi
 
-        # Reject the artifact unless all nine required SuSFS capabilities are
-        # enabled in the configuration that produced this exact Image.
-        REQUIRED_SUSFS_CONFIGS=(
-          CONFIG_KSU_SUSFS_SUS_PATH
-          CONFIG_KSU_SUSFS_SUS_MOUNT
-          CONFIG_KSU_SUSFS_SUS_KSTAT
-          CONFIG_KSU_SUSFS_SPOOF_UNAME
-          CONFIG_KSU_SUSFS_ENABLE_LOG
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT
-          CONFIG_KSU_SUSFS_SUS_MAP
-        )
-        for capability in "${REQUIRED_SUSFS_CONFIGS[@]}"; do
-          if ! grep -qx "${capability}=y" "$FINAL_CONFIG"; then
-            echo "::error::Final kernel config is missing ${capability}=y"
-            rm -f "$IMAGE_STRINGS"
-            exit 1
+        SECURITY_MARKERS=(CONFIG_SECCOMP CONFIG_SECCOMP_FILTER)
+        if [ "${OP_SUSFS:-false}" = "true" ]; then
+          # SuSFS capability gates apply only to a SuSFS build.  The native
+          # boot baseline intentionally excludes SuSFS to isolate KaliSU.
+          REQUIRED_SUSFS_CONFIGS=(
+            CONFIG_KSU_SUSFS_SUS_PATH
+            CONFIG_KSU_SUSFS_SUS_MOUNT
+            CONFIG_KSU_SUSFS_SUS_KSTAT
+            CONFIG_KSU_SUSFS_SPOOF_UNAME
+            CONFIG_KSU_SUSFS_ENABLE_LOG
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT
+            CONFIG_KSU_SUSFS_SUS_MAP
+          )
+          for capability in "${REQUIRED_SUSFS_CONFIGS[@]}"; do
+            if ! grep -qx "${capability}=y" "$FINAL_CONFIG"; then
+              echo "::error::Final kernel config is missing ${capability}=y"
+              rm -f "$IMAGE_STRINGS"
+              exit 1
+            fi
+          done
+          SECURITY_MARKERS+=(CONFIG_KSU_SUSFS)
+          if [ "${{ inputs.ksu_type }}" != "KaliSU" ]; then
+            SECURITY_MARKERS+=(CONFIG_KSU_HOOK_SUSFS_INLINE)
           fi
-        done
-        SECURITY_MARKERS=(CONFIG_KSU_SUSFS CONFIG_SECCOMP CONFIG_SECCOMP_FILTER)
-        if [ "${{ inputs.ksu_type }}" != "KaliSU" ]; then
-          SECURITY_MARKERS+=(CONFIG_KSU_HOOK_SUSFS_INLINE)
         fi
         for security_marker in "${SECURITY_MARKERS[@]}"; do
           if ! grep -qx "${security_marker}=y" "$FINAL_CONFIG"; then
@@ -3106,7 +3108,7 @@ runs:
             exit 1
           fi
         done
-        if grep -qx 'CONFIG_KSU_HOOK_TRACEPOINT=y' "$FINAL_CONFIG"; then
+        if [ "${OP_SUSFS:-false}" = "true" ] && grep -qx 'CONFIG_KSU_HOOK_TRACEPOINT=y' "$FINAL_CONFIG"; then
           echo "::error::Tracepoint hook mode is enabled alongside required SUSFS Inline mode"
           rm -f "$IMAGE_STRINGS"
           exit 1
@@ -3129,8 +3131,12 @@ runs:
           grep -qi 'nomount' "$IMAGE_STRINGS" || { echo "::error::NoMount engine marker missing"; exit 1; }
         fi
         rm -f "$IMAGE_STRINGS"
-        echo "   - SuSFS capabilities: all 9 required features present"
-        echo "   - Hook mode: SUSFS Inline"
+        if [ "${OP_SUSFS:-false}" = "true" ]; then
+          echo "   - SuSFS capabilities: all 9 required features present"
+          echo "   - Hook mode: SUSFS Inline"
+        else
+          echo "   - SuSFS: intentionally excluded from native boot baseline"
+        fi
         echo "   - Seccomp status: Filter"
 
         printf 'warnings_count=%s\n' "$WARNINGS_COUNT" >> "$GITHUB_OUTPUT"
